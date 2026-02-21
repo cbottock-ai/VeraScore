@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { StockSearch } from '@/components/StockSearch'
 
 const navItems = [
   { to: '/', label: 'Portfolio' },
@@ -31,6 +32,9 @@ export function Layout() {
               </NavLink>
             ))}
           </nav>
+          <div className="ml-auto">
+            <StockSearch />
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">
