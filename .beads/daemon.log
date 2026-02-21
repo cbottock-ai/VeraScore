@@ -1,0 +1,215 @@
+time=2026-02-16T14:59:21.058-07:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-02-16T14:59:21.060-07:00 level=INFO msg="using database" path=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/beads.db
+time=2026-02-16T14:59:21.120-07:00 level=INFO msg="database opened" path=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/beads.db backend=sqlite freshness_checking=true
+time=2026-02-16T14:59:21.121-07:00 level=INFO msg="upgrading .beads/.gitignore"
+time=2026-02-16T14:59:21.121-07:00 level=WARN msg="failed to upgrade .gitignore" error="open .beads/.gitignore: no such file or directory"
+time=2026-02-16T14:59:21.141-07:00 level=INFO msg="Repository fingerprint validated: %s" !BADKEY=cb61bb7e
+time=2026-02-16T14:59:21.142-07:00 level=INFO msg="starting RPC server" socket=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/bd.sock
+time=2026-02-16T14:59:21.143-07:00 level=INFO msg="RPC server ready (socket listening)"
+time=2026-02-16T14:59:21.149-07:00 level=INFO msg="registered in global registry"
+time=2026-02-16T14:59:21.149-07:00 level=INFO msg="Starting %s..." !BADKEY="sync cycle"
+time=2026-02-16T14:59:21.150-07:00 level=INFO msg="Exported to JSONL"
+time=2026-02-16T14:59:21.988-07:00 level=INFO msg="Pulled from remote"
+time=2026-02-16T14:59:22.015-07:00 level=INFO msg="Imported from JSONL"
+time=2026-02-16T14:59:22.043-07:00 level=INFO msg="Sync cycle complete"
+time=2026-02-16T14:59:22.043-07:00 level=INFO msg="monitoring parent process" pid=0
+time=2026-02-16T14:59:22.043-07:00 level=INFO msg="using event-driven mode"
+time=2026-02-16T14:59:22.044-07:00 level=INFO msg="Auto-pull disabled: use 'git pull' manually to sync remote changes"
+time=2026-02-16T14:59:22.044-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-ba3
+time=2026-02-16T14:59:22.545-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:22.545-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:22.546-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T14:59:24.150-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-sk1
+time=2026-02-16T14:59:24.650-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:24.650-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:24.651-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T14:59:27.720-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-lz0
+time=2026-02-16T14:59:28.221-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:28.221-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:28.222-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T14:59:30.354-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-ru8
+time=2026-02-16T14:59:30.855-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:30.856-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:30.856-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T14:59:33.484-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-ajn
+time=2026-02-16T14:59:33.984-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:33.985-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:33.985-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T14:59:36.226-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-dxn
+time=2026-02-16T14:59:36.727-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:36.728-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:36.728-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T14:59:42.095-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-kmk
+time=2026-02-16T14:59:42.596-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:42.596-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:42.597-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T14:59:54.890-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-sk1
+time=2026-02-16T14:59:55.393-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:55.393-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:55.394-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T14:59:57.792-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-lz0
+time=2026-02-16T14:59:58.293-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T14:59:58.293-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T14:59:58.294-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T15:00:00.184-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-ru8
+time=2026-02-16T15:00:00.685-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T15:00:00.686-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T15:00:00.686-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T15:00:02.905-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-ajn
+time=2026-02-16T15:00:03.407-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T15:00:03.407-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T15:00:03.408-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T15:00:04.878-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-dxn
+time=2026-02-16T15:00:05.379-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T15:00:05.379-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T15:00:05.380-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T15:00:06.871-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-kmk
+time=2026-02-16T15:00:07.372-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-16T15:00:07.373-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-16T15:00:07.373-07:00 level=INFO msg="Pre-export validation failed: %v" !BADKEY="refusing to export: JSONL content has changed since last import (import first to avoid data loss)"
+time=2026-02-16T15:23:40.269-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-16T15:23:40.321-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-16T15:23:40.322-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-16T15:23:40.675-07:00 level=INFO msg="Git ref change detected: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.git/refs/heads/main.lock
+time=2026-02-16T15:23:41.677-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-16T15:23:41.678-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-16T15:23:41.695-07:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-02-16T15:33:54.919-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-16T15:33:54.970-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-16T15:33:54.971-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-16T15:33:55.975-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-16T15:33:55.977-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-16T15:33:55.978-07:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-02-16T15:33:58.489-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-16T15:33:58.540-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-16T15:33:58.541-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-16T15:33:59.542-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-16T15:33:59.542-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-16T15:33:59.547-07:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-02-21T15:12:12.429-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:12:12.481-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:12:12.484-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:12:12.555-07:00 level=INFO msg="Git ref change detected: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.git/refs/heads/main.lock
+time=2026-02-21T15:12:13.557-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:12:13.558-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:12:13.579-07:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-02-21T15:12:16.427-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:12:16.479-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:12:16.479-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:12:17.481-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:12:17.481-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:12:17.489-07:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-02-21T15:13:23.549-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:13:23.601-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:13:23.601-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:13:24.603-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:13:24.603-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:13:24.604-07:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-02-21T15:16:39.461-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-z0r
+time=2026-02-21T15:16:39.964-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-21T15:16:39.964-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-21T15:16:39.972-07:00 level=INFO msg="Exported to JSONL"
+time=2026-02-21T15:16:39.972-07:00 level=INFO msg="Export complete"
+time=2026-02-21T15:16:39.973-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:16:40.024-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:16:40.024-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:16:41.028-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:16:41.029-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:41.034-07:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:41.723-07:00 level=INFO msg="Pulled from remote"
+time=2026-02-21T15:16:41.730-07:00 level=INFO msg="Imported from JSONL"
+time=2026-02-21T15:16:41.730-07:00 level=INFO msg="Auto-import complete"
+time=2026-02-21T15:16:44.939-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-36l
+time=2026-02-21T15:16:45.439-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-21T15:16:45.440-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-21T15:16:45.450-07:00 level=INFO msg="Exported to JSONL"
+time=2026-02-21T15:16:45.450-07:00 level=INFO msg="Export complete"
+time=2026-02-21T15:16:45.451-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:16:45.502-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:16:45.502-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:16:46.504-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:16:46.504-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:46.505-07:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:46.925-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-5cu
+time=2026-02-21T15:16:47.115-07:00 level=INFO msg="Pulled from remote"
+time=2026-02-21T15:16:47.117-07:00 level=INFO msg="Imported from JSONL"
+time=2026-02-21T15:16:47.117-07:00 level=INFO msg="Auto-import complete"
+time=2026-02-21T15:16:47.427-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-21T15:16:47.427-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-21T15:16:47.431-07:00 level=INFO msg="Exported to JSONL"
+time=2026-02-21T15:16:47.431-07:00 level=INFO msg="Export complete"
+time=2026-02-21T15:16:47.431-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:16:47.482-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:16:47.482-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:16:48.484-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:16:48.485-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:48.486-07:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:49.127-07:00 level=INFO msg="Pulled from remote"
+time=2026-02-21T15:16:49.131-07:00 level=INFO msg="Imported from JSONL"
+time=2026-02-21T15:16:49.131-07:00 level=INFO msg="Auto-import complete"
+time=2026-02-21T15:16:50.000-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-dtl
+time=2026-02-21T15:16:50.501-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-21T15:16:50.502-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-21T15:16:50.506-07:00 level=INFO msg="Exported to JSONL"
+time=2026-02-21T15:16:50.506-07:00 level=INFO msg="Export complete"
+time=2026-02-21T15:16:50.506-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:16:50.558-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:16:50.558-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:16:51.560-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:16:51.560-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:51.561-07:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:52.026-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-jj2
+time=2026-02-21T15:16:52.143-07:00 level=INFO msg="Pulled from remote"
+time=2026-02-21T15:16:52.146-07:00 level=INFO msg="Imported from JSONL"
+time=2026-02-21T15:16:52.146-07:00 level=INFO msg="Auto-import complete"
+time=2026-02-21T15:16:52.527-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-21T15:16:52.527-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-21T15:16:52.531-07:00 level=INFO msg="Exported to JSONL"
+time=2026-02-21T15:16:52.531-07:00 level=INFO msg="Export complete"
+time=2026-02-21T15:16:52.531-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:16:52.582-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:16:52.582-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:16:53.585-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:16:53.586-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:53.587-07:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:54.064-07:00 level=INFO msg="Mutation detected: %s %s" create=VeraScore-806
+time=2026-02-21T15:16:54.148-07:00 level=INFO msg="Pulled from remote"
+time=2026-02-21T15:16:54.152-07:00 level=INFO msg="Imported from JSONL"
+time=2026-02-21T15:16:54.153-07:00 level=INFO msg="Auto-import complete"
+time=2026-02-21T15:16:54.565-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-21T15:16:54.566-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-21T15:16:54.572-07:00 level=INFO msg="Exported to JSONL"
+time=2026-02-21T15:16:54.572-07:00 level=INFO msg="Export complete"
+time=2026-02-21T15:16:54.572-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:16:54.623-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:16:54.623-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:16:55.625-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:16:55.626-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:55.629-07:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-02-21T15:16:56.214-07:00 level=INFO msg="Pulled from remote"
+time=2026-02-21T15:16:56.217-07:00 level=INFO msg="Imported from JSONL"
+time=2026-02-21T15:16:56.217-07:00 level=INFO msg="Auto-import complete"
+time=2026-02-21T15:17:23.472-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-36l
+time=2026-02-21T15:17:23.611-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-5cu
+time=2026-02-21T15:17:23.741-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-dtl
+time=2026-02-21T15:17:23.886-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-jj2
+time=2026-02-21T15:17:24.025-07:00 level=INFO msg="Mutation detected: %s %s" update=VeraScore-806
+time=2026-02-21T15:17:24.528-07:00 level=INFO msg="Export triggered by mutation events"
+time=2026-02-21T15:17:24.531-07:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-02-21T15:17:24.609-07:00 level=INFO msg="Exported to JSONL"
+time=2026-02-21T15:17:24.609-07:00 level=INFO msg="Export complete"
+time=2026-02-21T15:17:24.609-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:17:24.660-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:17:24.660-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:17:25.662-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:17:25.663-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:17:25.664-07:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-02-21T15:17:26.296-07:00 level=INFO msg="Pulled from remote"
+time=2026-02-21T15:17:26.301-07:00 level=INFO msg="Imported from JSONL"
+time=2026-02-21T15:17:26.301-07:00 level=INFO msg="Auto-import complete"
+time=2026-02-21T15:17:27.353-07:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-02-21T15:17:27.404-07:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-02-21T15:17:27.404-07:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/cullenbottock/Documents/Projects/VeraScore/.beads/issues.jsonl
+time=2026-02-21T15:17:28.406-07:00 level=INFO msg="Import triggered by file change"
+time=2026-02-21T15:17:28.407-07:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-02-21T15:17:28.407-07:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
