@@ -98,3 +98,28 @@ export interface FundamentalsResponse {
   dividend: DividendMetrics
   analyst: AnalystMetrics
 }
+
+// Scoring types
+export interface ScoreComponent {
+  metric_id: string
+  label: string
+  raw_value: number | null
+  score: number | null
+  weight: number
+}
+
+export interface FactorScore {
+  factor: string
+  label: string
+  score: number | null
+  weight: number
+  components: ScoreComponent[]
+  explanation: string
+}
+
+export interface StockScoresResponse {
+  ticker: string
+  overall_score: number | null
+  factors: Record<string, FactorScore>
+  profile_used: string
+}

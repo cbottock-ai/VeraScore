@@ -1,0 +1,54 @@
+factor: momentum
+version: 1
+label: "Momentum"
+description: "Price trends and relative strength"
+default_weight: 0.15
+
+metrics:
+  - id: price_change_1m
+    source: momentum.price_change_1m
+    label: "1-Month Price Change"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -15
+      input_max: 15
+      output_min: 0
+      output_max: 100
+    weight: 0.15
+
+  - id: price_change_3m
+    source: momentum.price_change_3m
+    label: "3-Month Price Change"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -20
+      input_max: 25
+      output_min: 0
+      output_max: 100
+    weight: 0.25
+
+  - id: price_change_6m
+    source: momentum.price_change_6m
+    label: "6-Month Price Change"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -25
+      input_max: 40
+      output_min: 0
+      output_max: 100
+    weight: 0.30
+
+  - id: price_change_1y
+    source: momentum.price_change_1y
+    label: "12-Month Price Change"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -30
+      input_max: 60
+      output_min: 0
+      output_max: 100
+    weight: 0.30

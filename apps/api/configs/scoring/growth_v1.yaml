@@ -1,0 +1,66 @@
+factor: growth
+version: 1
+label: "Growth"
+description: "Revenue and earnings growth trends"
+default_weight: 0.20
+
+metrics:
+  - id: revenue_growth_yoy
+    source: growth.revenue_growth_yoy
+    label: "Revenue Growth (YoY)"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -10
+      input_max: 40
+      output_min: 0
+      output_max: 100
+    weight: 0.25
+
+  - id: earnings_growth_yoy
+    source: growth.earnings_growth_yoy
+    label: "Earnings Growth (YoY)"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -20
+      input_max: 50
+      output_min: 0
+      output_max: 100
+    weight: 0.25
+
+  - id: earnings_growth_quarterly
+    source: growth.earnings_growth_quarterly
+    label: "Earnings Growth (QoQ)"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -20
+      input_max: 50
+      output_min: 0
+      output_max: 100
+    weight: 0.15
+
+  - id: revenue_growth_3y
+    source: growth.revenue_growth_3y
+    label: "Revenue Growth (3Y CAGR)"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -5
+      input_max: 30
+      output_min: 0
+      output_max: 100
+    weight: 0.20
+
+  - id: earnings_growth_3y
+    source: growth.earnings_growth_3y
+    label: "Earnings Growth (3Y CAGR)"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -10
+      input_max: 40
+      output_min: 0
+      output_max: 100
+    weight: 0.15

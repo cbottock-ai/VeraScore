@@ -1,0 +1,115 @@
+factor: valuation
+version: 1
+label: "Valuation"
+description: "Price relative to fundamentals"
+default_weight: 0.25
+
+metrics:
+  - id: pe_ratio
+    source: valuation.pe_ttm
+    label: "P/E Ratio (TTM)"
+    scoring_method: threshold
+    higher_is_better: false
+    thresholds:
+      - max: 10
+        score: 100
+      - max: 15
+        score: 85
+      - max: 20
+        score: 70
+      - max: 30
+        score: 55
+      - max: 40
+        score: 40
+      - max: 60
+        score: 25
+      - default: 10
+    weight: 0.25
+
+  - id: forward_pe
+    source: valuation.pe_ntm
+    label: "P/E Ratio (NTM)"
+    scoring_method: threshold
+    higher_is_better: false
+    thresholds:
+      - max: 10
+        score: 100
+      - max: 15
+        score: 85
+      - max: 20
+        score: 70
+      - max: 25
+        score: 55
+      - max: 35
+        score: 40
+      - max: 50
+        score: 25
+      - default: 10
+    weight: 0.10
+
+  - id: ps_ratio
+    source: valuation.ps_ttm
+    label: "P/S Ratio (TTM)"
+    scoring_method: threshold
+    higher_is_better: false
+    thresholds:
+      - max: 1.0
+        score: 100
+      - max: 3.0
+        score: 80
+      - max: 5.0
+        score: 65
+      - max: 10.0
+        score: 45
+      - max: 20.0
+        score: 25
+      - default: 10
+    weight: 0.15
+
+  - id: peg_ratio
+    source: valuation.peg_ratio
+    label: "PEG Ratio"
+    scoring_method: threshold
+    higher_is_better: false
+    thresholds:
+      - max: 1.0
+        score: 100
+      - max: 1.5
+        score: 80
+      - max: 2.0
+        score: 60
+      - max: 3.0
+        score: 40
+      - default: 20
+    weight: 0.15
+
+  - id: fcf_yield
+    source: quality.fcf_yield
+    label: "FCF Yield"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: 0
+      input_max: 10
+      output_min: 0
+      output_max: 100
+    weight: 0.15
+
+  - id: ev_ebitda
+    source: valuation.ev_to_ebitda
+    label: "EV/EBITDA"
+    scoring_method: threshold
+    higher_is_better: false
+    thresholds:
+      - max: 8
+        score: 100
+      - max: 12
+        score: 80
+      - max: 18
+        score: 65
+      - max: 25
+        score: 45
+      - max: 35
+        score: 30
+      - default: 15
+    weight: 0.20

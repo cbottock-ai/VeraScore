@@ -1,7 +1,8 @@
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getStock, getFundamentals } from '@/services/api'
+import { getStock, getFundamentals, getScores } from '@/services/api'
 import { MetricCard } from '@/components/MetricCard'
+import { ScoreBadge, FactorCard } from '@/components/ScoreCard'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -11,6 +12,12 @@ export function ResearchPage() {
   const stockQuery = useQuery({
     queryKey: ['stock', ticker],
     queryFn: () => getStock(ticker!),
+    enabled: !!ticker,
+  })
+
+  const scoresQuery = useQuery({
+    queryKey: ['scores', ticker],
+    queryFn: () => getScores(ticker!),
     enabled: !!ticker,
   })
 
@@ -32,6 +39,7 @@ export function ResearchPage() {
   }
 
   const stock = stockQuery.data
+  const scores = scoresQuery.data
   const fundamentals = fundamentalsQuery.data
 
   return (
@@ -86,7 +94,37 @@ export function ResearchPage() {
         )}
       </div>
 
+      {/* VeraScore Summary */}
+      {scoresQuery.isLoading ? (
+        <div className="mb-6">
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : scores ? (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-3">VeraScore</h2>
+          <div className="flex flex-wrap gap-3">
+            <ScoreBadge score={scores.overall_score} label="Overall" size="lg" />
+            {Object.values(scores.factors).map((f) => (
+              <ScoreBadge key={f.factor} score={f.score} label={f.label} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Factor Score Breakdown */}
+      {scores && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-3">Score Breakdown</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {Object.values(scores.factors).map((f) => (
+              <FactorCard key={f.factor} factor={f} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Fundamentals Grid */}
+      <h2 className="text-lg font-semibold mb-3">Fundamentals</h2>
       {fundamentalsQuery.isLoading ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 7 }).map((_, i) => (

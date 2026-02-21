@@ -1,0 +1,47 @@
+factor: sentiment
+version: 1
+label: "Sentiment"
+description: "Analyst consensus and price target analysis"
+default_weight: 0.00
+
+metrics:
+  - id: analyst_upside
+    source: analyst.upside_pct
+    label: "Analyst Upside Potential"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -20
+      input_max: 40
+      output_min: 0
+      output_max: 100
+    weight: 0.35
+
+  - id: analyst_rating
+    source: analyst.rating_score
+    label: "Analyst Consensus Rating"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: 0
+      input_max: 5
+      output_min: 0
+      output_max: 100
+    weight: 0.30
+
+  - id: analyst_coverage
+    source: analyst.num_analysts
+    label: "Analyst Coverage"
+    scoring_method: threshold
+    higher_is_better: true
+    thresholds:
+      - min: 25
+        score: 100
+      - min: 15
+        score: 85
+      - min: 10
+        score: 70
+      - min: 5
+        score: 50
+      - default: 30
+    weight: 0.35

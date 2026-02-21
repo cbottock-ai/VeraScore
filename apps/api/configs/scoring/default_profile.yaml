@@ -1,0 +1,16 @@
+profile: default
+version: 1
+label: "Default Scoring Profile"
+description: "Balanced scoring across all factors"
+
+factors:
+  - config: valuation_v1
+    weight: 0.25
+  - config: growth_v1
+    weight: 0.20
+  - config: profitability_v1
+    weight: 0.20
+  - config: quality_v1
+    weight: 0.20
+  - config: momentum_v1
+    weight: 0.15

@@ -1,0 +1,71 @@
+factor: quality
+version: 1
+label: "Quality"
+description: "Balance sheet health and financial stability"
+default_weight: 0.20
+
+metrics:
+  - id: current_ratio
+    source: quality.current_ratio
+    label: "Current Ratio"
+    scoring_method: threshold
+    higher_is_better: true
+    thresholds:
+      - min: 2.0
+        score: 100
+      - min: 1.5
+        score: 80
+      - min: 1.0
+        score: 60
+      - min: 0.5
+        score: 30
+      - default: 10
+    weight: 0.20
+
+  - id: quick_ratio
+    source: quality.quick_ratio
+    label: "Quick Ratio"
+    scoring_method: threshold
+    higher_is_better: true
+    thresholds:
+      - min: 1.5
+        score: 100
+      - min: 1.0
+        score: 80
+      - min: 0.7
+        score: 60
+      - min: 0.3
+        score: 30
+      - default: 10
+    weight: 0.15
+
+  - id: debt_to_equity
+    source: quality.debt_to_equity
+    label: "Debt to Equity"
+    scoring_method: threshold
+    higher_is_better: false
+    thresholds:
+      - max: 0.3
+        score: 100
+      - max: 0.5
+        score: 85
+      - max: 1.0
+        score: 70
+      - max: 2.0
+        score: 50
+      - max: 3.0
+        score: 30
+      - default: 15
+    weight: 0.30
+
+  - id: fcf_yield
+    source: quality.fcf_yield
+    label: "FCF Yield"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: 0
+      input_max: 10
+      output_min: 0
+      output_max: 100
+    weight: 0.35

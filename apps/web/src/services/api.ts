@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { StockSearchResponse, StockDetail, FundamentalsResponse } from '@/types/stock'
+import type { StockSearchResponse, StockDetail, FundamentalsResponse, StockScoresResponse } from '@/types/stock'
 
 const api = axios.create({
   baseURL: '/api',
@@ -19,5 +19,10 @@ export async function getStock(ticker: string): Promise<StockDetail> {
 
 export async function getFundamentals(ticker: string): Promise<FundamentalsResponse> {
   const { data } = await api.get<FundamentalsResponse>(`/stocks/${ticker}/fundamentals`)
+  return data
+}
+
+export async function getScores(ticker: string): Promise<StockScoresResponse> {
+  const { data } = await api.get<StockScoresResponse>(`/scoring/stocks/${ticker}/scores`)
   return data
 }

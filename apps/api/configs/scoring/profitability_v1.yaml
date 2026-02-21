@@ -1,0 +1,96 @@
+factor: profitability
+version: 1
+label: "Profitability"
+description: "Margins and returns on capital"
+default_weight: 0.20
+
+metrics:
+  - id: gross_margin
+    source: profitability.gross_margin
+    label: "Gross Margin"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: 0
+      input_max: 70
+      output_min: 0
+      output_max: 100
+    weight: 0.15
+
+  - id: ebitda_margin
+    source: profitability.ebitda_margin
+    label: "EBITDA Margin"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: 0
+      input_max: 50
+      output_min: 0
+      output_max: 100
+    weight: 0.15
+
+  - id: operating_margin
+    source: profitability.operating_margin
+    label: "Operating Margin"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -5
+      input_max: 45
+      output_min: 0
+      output_max: 100
+    weight: 0.20
+
+  - id: net_margin
+    source: profitability.net_margin
+    label: "Net Margin"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -5
+      input_max: 35
+      output_min: 0
+      output_max: 100
+    weight: 0.15
+
+  - id: roe
+    source: profitability.roe
+    label: "Return on Equity"
+    scoring_method: threshold
+    higher_is_better: true
+    thresholds:
+      - min: 30
+        score: 100
+      - min: 20
+        score: 85
+      - min: 15
+        score: 70
+      - min: 10
+        score: 55
+      - min: 5
+        score: 40
+      - min: 0
+        score: 25
+      - default: 10
+    weight: 0.15
+
+  - id: roa
+    source: profitability.roa
+    label: "Return on Assets"
+    scoring_method: threshold
+    higher_is_better: true
+    thresholds:
+      - min: 15
+        score: 100
+      - min: 10
+        score: 85
+      - min: 7
+        score: 70
+      - min: 5
+        score: 55
+      - min: 2
+        score: 40
+      - min: 0
+        score: 25
+      - default: 10
+    weight: 0.20
