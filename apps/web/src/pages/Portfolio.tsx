@@ -32,6 +32,7 @@ function PortfolioList({ onSelect }: { onSelect: (id: number) => void }) {
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['portfolios'],
@@ -127,15 +128,32 @@ function PortfolioList({ onSelect }: { onSelect: (id: number) => void }) {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">{p.name}</CardTitle>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (confirm(`Delete "${p.name}"?`)) deleteMutation.mutate(p.id)
-                    }}
-                    className="text-xs text-muted-foreground hover:text-destructive"
-                  >
-                    Delete
-                  </button>
+                  {confirmDeleteId === p.id ? (
+                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => deleteMutation.mutate(p.id, { onSettled: () => setConfirmDeleteId(null) })}
+                        className="text-xs font-medium text-destructive hover:underline"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="text-xs text-muted-foreground hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmDeleteId(p.id)
+                      }}
+                      className="text-xs text-muted-foreground hover:text-destructive"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
