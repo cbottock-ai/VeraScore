@@ -1,3 +1,4 @@
+import json
 import logging
 from collections.abc import AsyncGenerator
 
@@ -109,8 +110,8 @@ async def send_message(
     try:
         async for chunk in provider.stream_response(history, db):
             full_response += chunk
-            # SSE format
-            yield f"data: {chunk}\n\n"
+            # SSE format — JSON-encode to preserve newlines
+            yield f"data: {json.dumps(chunk)}\n\n"
 
         # Save assistant response
         if full_response:

@@ -11,7 +11,11 @@ from src.core.data_providers.fmp import (
     fmp_financial_growth,
     fmp_search,
 )
-from src.core.data_providers.yahoo import yahoo_get_momentum, yahoo_get_stock_info
+from src.core.data_providers.yahoo import (
+    yahoo_get_historical_growth,
+    yahoo_get_momentum,
+    yahoo_get_stock_info,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +51,16 @@ async def fetch_fundamentals(ticker: str) -> dict:
     # yfinance for all high-level metrics
     info = await fetch_stock_info(ticker)
 
-    # FMP for multi-year historical growth
-    growth = await fmp_financial_growth(ticker)
+    # FMP for multi-year historical growth, fallback to yfinance
+    try:
+        growth = await fmp_financial_growth(ticker)
+    except Exception:
+        logger.warning(f"FMP growth data unavailable for {ticker}, falling back to yfinance")
+        growth = None
+
+    yf_growth = None
+    if growth is None:
+        yf_growth = await yahoo_get_historical_growth(ticker)
 
     # yfinance for momentum (price history)
     momentum = await yahoo_get_momentum(ticker)
@@ -69,10 +81,10 @@ async def fetch_fundamentals(ticker: str) -> dict:
             "revenue_growth_yoy": info.get("revenue_growth_yoy"),
             "earnings_growth_yoy": info.get("earnings_growth_yoy"),
             "earnings_growth_quarterly": info.get("earnings_growth_quarterly"),
-            "revenue_growth_3y": _pct(growth, "threeYRevenueGrowthPerShare"),
-            "earnings_growth_3y": _pct(growth, "threeYNetIncomeGrowthPerShare"),
-            "revenue_growth_5y": _pct(growth, "fiveYRevenueGrowthPerShare"),
-            "revenue_growth_10y": _pct(growth, "tenYRevenueGrowthPerShare"),
+            "revenue_growth_3y": _pct(growth, "threeYRevenueGrowthPerShare") if growth else (yf_growth or {}).get("revenue_growth_3y"),
+            "earnings_growth_3y": _pct(growth, "threeYNetIncomeGrowthPerShare") if growth else (yf_growth or {}).get("earnings_growth_3y"),
+            "revenue_growth_5y": _pct(growth, "fiveYRevenueGrowthPerShare") if growth else (yf_growth or {}).get("revenue_growth_5y"),
+            "revenue_growth_10y": _pct(growth, "tenYRevenueGrowthPerShare") if growth else (yf_growth or {}).get("revenue_growth_10y"),
         },
         "profitability": {
             "gross_margin": info.get("gross_margin"),

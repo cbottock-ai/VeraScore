@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listConversations,
@@ -298,13 +299,13 @@ function MessageBubble({ message }: { message: Message }) {
         {isUser ? 'You' : 'VS'}
       </div>
       <div
-        className={`max-w-[70%] rounded-lg px-4 py-3 text-sm whitespace-pre-wrap ${
+        className={`max-w-[70%] rounded-lg px-4 py-3 text-sm ${
           isUser
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-muted'
+            ? 'bg-primary text-primary-foreground whitespace-pre-wrap'
+            : 'bg-muted prose prose-sm prose-neutral dark:prose-invert max-w-none'
         }`}
       >
-        {message.content}
+        {isUser ? message.content : <ReactMarkdown>{message.content}</ReactMarkdown>}
       </div>
     </div>
   )

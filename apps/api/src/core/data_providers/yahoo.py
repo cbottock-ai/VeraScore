@@ -104,6 +104,56 @@ def _get_momentum_sync(ticker: str) -> dict:
         return {}
 
 
+def _get_historical_growth_sync(ticker: str) -> dict:
+    """Calculate multi-year revenue/earnings CAGR from yfinance financials."""
+    try:
+        t = yf.Ticker(ticker)
+        financials = t.financials  # annual income statement, columns = dates descending
+        if financials is None or financials.empty:
+            return {}
+
+        result = {}
+
+        # Revenue growth
+        rev_row = None
+        for label in ["Total Revenue", "Revenue"]:
+            if label in financials.index:
+                rev_row = financials.loc[label].dropna().sort_index()
+                break
+
+        if rev_row is not None and len(rev_row) >= 2:
+            latest = float(rev_row.iloc[-1])
+            if latest > 0:
+                for years, key in [(3, "revenue_growth_3y"), (5, "revenue_growth_5y"), (10, "revenue_growth_10y")]:
+                    if len(rev_row) >= years + 1:
+                        past = float(rev_row.iloc[-(years + 1)])
+                        if past > 0:
+                            cagr = ((latest / past) ** (1 / years) - 1) * 100
+                            result[key] = round(cagr, 2)
+
+        # Earnings (net income) growth
+        ni_row = None
+        for label in ["Net Income", "Net Income Common Stockholders"]:
+            if label in financials.index:
+                ni_row = financials.loc[label].dropna().sort_index()
+                break
+
+        if ni_row is not None and len(ni_row) >= 2:
+            latest = float(ni_row.iloc[-1])
+            if latest > 0:
+                for years, key in [(3, "earnings_growth_3y")]:
+                    if len(ni_row) >= years + 1:
+                        past = float(ni_row.iloc[-(years + 1)])
+                        if past > 0:
+                            cagr = ((latest / past) ** (1 / years) - 1) * 100
+                            result[key] = round(cagr, 2)
+
+        return result
+    except Exception:
+        logger.exception("yfinance historical growth fetch failed for %s", ticker)
+        return {}
+
+
 def _to_pct(val: float | None) -> float | None:
     """Convert decimal to percentage (0.47 → 47.0)."""
     if val is None:
@@ -123,3 +173,10 @@ async def yahoo_get_momentum(ticker: str) -> dict:
 
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_executor, _get_momentum_sync, ticker)
+
+
+async def yahoo_get_historical_growth(ticker: str) -> dict:
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, _get_historical_growth_sync, ticker)
