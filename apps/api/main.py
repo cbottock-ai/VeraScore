@@ -7,6 +7,7 @@ from src.core.config import settings
 from src.core.database import Base, engine
 from src.portfolios.routes import router as portfolios_router
 from src.scoring.routes import router as scoring_router
+from src.chat.routes import router as chat_router
 from src.stocks.routes import router as stocks_router
 
 
@@ -29,6 +30,7 @@ app.add_middleware(
 app.include_router(stocks_router, prefix="/api")
 app.include_router(scoring_router, prefix="/api")
 app.include_router(portfolios_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
 
 
 @app.get("/health")
