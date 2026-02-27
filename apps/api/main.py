@@ -3,11 +3,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.chat.routes import router as chat_router
 from src.core.config import settings
 from src.core.database import Base, engine
+
+# Import models to ensure tables are created
+from src.earnings import models as earnings_models  # noqa: F401
 from src.portfolios.routes import router as portfolios_router
 from src.scoring.routes import router as scoring_router
-from src.chat.routes import router as chat_router
 from src.stocks.routes import router as stocks_router
 
 

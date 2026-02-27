@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     llm_provider: str = "anthropic"
     llm_model: str = ""
 
+    # Embedding settings
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimension: int = 1536
+    chunk_size: int = 512
+    chunk_overlap: int = 50
+
     model_config = {"env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
 
 

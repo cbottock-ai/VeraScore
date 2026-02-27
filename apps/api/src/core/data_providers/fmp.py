@@ -96,3 +96,96 @@ async def fmp_financial_growth(ticker: str) -> dict | None:
         resp.raise_for_status()
         data = resp.json()
         return data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else None
+
+
+async def fmp_earnings_historical(ticker: str, limit: int = 5) -> list[dict]:
+    """Get historical earnings data for a ticker from quarterly income statements.
+
+    Note: Free tier limits to 5 quarterly results.
+    Returns list with: date, eps, revenue, fiscalYear, period (Q1-Q4)
+    """
+    if not settings.fmp_api_key:
+        return []
+    # Clamp limit to 5 for free tier
+    limit = min(limit, 5)
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/income-statement",
+            params={
+                "symbol": ticker,
+                "period": "quarter",
+                "limit": limit,
+                "apikey": settings.fmp_api_key,
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, str):  # Error message
+            return []
+        return data if isinstance(data, list) else []
+
+
+async def fmp_earnings_calendar(from_date: str, to_date: str) -> list[dict]:
+    """Get earnings calendar for a date range. Dates in YYYY-MM-DD format."""
+    if not settings.fmp_api_key:
+        return []
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earnings-calendar",
+            params={"from": from_date, "to": to_date, "apikey": settings.fmp_api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+
+async def fmp_earnings_confirmed(from_date: str, to_date: str) -> list[dict]:
+    """Get confirmed earnings calendar (more accurate than regular calendar)."""
+    if not settings.fmp_api_key:
+        return []
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earning-calendar-confirmed",
+            params={"from": from_date, "to": to_date, "apikey": settings.fmp_api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+
+async def fmp_transcript(ticker: str, year: int, quarter: int) -> dict | None:
+    """Get earnings call transcript for a specific quarter."""
+    if not settings.fmp_api_key:
+        return None
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earning-call-transcript",
+            params={
+                "symbol": ticker,
+                "year": year,
+                "quarter": quarter,
+                "apikey": settings.fmp_api_key,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data[0] if isinstance(data, list) and data else None
+
+
+async def fmp_transcript_list(ticker: str) -> list[dict]:
+    """Get list of available transcripts for a ticker."""
+    if not settings.fmp_api_key:
+        return []
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earning-call-transcript",
+            params={"symbol": ticker, "apikey": settings.fmp_api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []

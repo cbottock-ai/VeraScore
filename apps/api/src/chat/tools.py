@@ -5,6 +5,11 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from src.core.data_providers.fetcher import fetch_fundamentals, fetch_search, fetch_stock_info
+from src.earnings.service import (
+    analyze_earnings_surprises,
+    get_earnings_history,
+    get_upcoming_earnings,
+)
 from src.portfolios.schemas import HoldingCreate, PortfolioCreate
 from src.portfolios.service import (
     add_holding,
@@ -14,6 +19,7 @@ from src.portfolios.service import (
     get_portfolio,
     list_portfolios,
 )
+from src.rag.search import get_transcript_summary, search_transcripts
 from src.scoring.engine import calculate_composite_score, calculate_factor_score
 
 logger = logging.getLogger(__name__)
@@ -136,6 +142,67 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["holding_id"],
         },
     },
+    # Earnings & RAG tools
+    {
+        "name": "get_earnings_history",
+        "description": "Get historical earnings data for a stock including EPS and revenue actuals vs estimates, surprise percentages, and beat/miss history.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Stock ticker symbol"},
+                "limit": {"type": "integer", "description": "Number of quarters to return", "default": 12},
+            },
+            "required": ["ticker"],
+        },
+    },
+    {
+        "name": "get_upcoming_earnings",
+        "description": "Get upcoming earnings announcements for the next N days across all stocks.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Number of days to look ahead", "default": 7},
+            },
+        },
+    },
+    {
+        "name": "search_earnings_transcripts",
+        "description": "Search earnings call transcripts using semantic search. Find what companies said about specific topics like AI, margins, guidance, etc.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query (e.g. 'AI strategy', 'margin expansion', 'guidance')"},
+                "ticker": {"type": "string", "description": "Optional: limit search to specific ticker"},
+                "top_k": {"type": "integer", "description": "Number of results to return", "default": 5},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "get_transcript_summary",
+        "description": "Get a summary of a specific earnings call transcript including key topics discussed and speakers.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Stock ticker symbol"},
+                "year": {"type": "integer", "description": "Fiscal year (e.g. 2024)"},
+                "quarter": {"type": "integer", "description": "Fiscal quarter (1-4)"},
+            },
+            "required": ["ticker", "year", "quarter"],
+        },
+    },
+    {
+        "name": "analyze_earnings_surprises",
+        "description": "Analyze a stock's earnings surprise patterns - beat/miss rates, trends, and consistency.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Stock ticker symbol"},
+                "quarters": {"type": "integer", "description": "Number of quarters to analyze", "default": 12},
+            },
+            "required": ["ticker"],
+        },
+    },
 ]
 
 
@@ -217,6 +284,47 @@ async def execute_tool(name: str, args: dict[str, Any], db: Session) -> str:
             if not success:
                 return json.dumps({"error": "Holding not found"})
             return json.dumps({"success": True, "message": "Holding removed"})
+
+        # Earnings & RAG tools
+        elif name == "get_earnings_history":
+            result = await get_earnings_history(
+                args["ticker"].upper(), db, args.get("limit", 12)
+            )
+            return json.dumps(result.model_dump(), default=str)
+
+        elif name == "get_upcoming_earnings":
+            result = await get_upcoming_earnings(db, args.get("days", 7))
+            return json.dumps(result.model_dump(), default=str)
+
+        elif name == "search_earnings_transcripts":
+            result = await search_transcripts(
+                query=args["query"],
+                db=db,
+                ticker=args.get("ticker"),
+                top_k=args.get("top_k", 5),
+            )
+            return json.dumps(result.model_dump(), default=str)
+
+        elif name == "get_transcript_summary":
+            result = await get_transcript_summary(
+                ticker=args["ticker"].upper(),
+                year=args["year"],
+                quarter=args["quarter"],
+                db=db,
+            )
+            return json.dumps(result, default=str)
+
+        elif name == "analyze_earnings_surprises":
+            # First ensure we have earnings data
+            await get_earnings_history(
+                args["ticker"].upper(), db, args.get("quarters", 12)
+            )
+            result = analyze_earnings_surprises(
+                args["ticker"].upper(), db, args.get("quarters", 12)
+            )
+            if not result:
+                return json.dumps({"error": "No earnings data found"})
+            return json.dumps(result.model_dump(), default=str)
 
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
