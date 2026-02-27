@@ -5,6 +5,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from src.core.data_providers.fetcher import fetch_fundamentals, fetch_search, fetch_stock_info
+from src.earnings.ir_fetcher import fetch_earnings_content
+from src.earnings.ir_sources import get_ir_source, seed_ir_sources
+from src.earnings.sec_edgar import fetch_recent_filings
 from src.earnings.service import (
     analyze_earnings_surprises,
     get_earnings_history,
@@ -203,6 +206,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["ticker"],
         },
     },
+    {
+        "name": "get_earnings_documents",
+        "description": "Get links to earnings documents (10-Q, 10-K, 8-K filings) from SEC EDGAR and company IR pages. Returns recent SEC filings and any available IR page content.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Stock ticker symbol"},
+                "limit": {"type": "integer", "description": "Max filings to return", "default": 5},
+            },
+            "required": ["ticker"],
+        },
+    },
 ]
 
 
@@ -325,6 +340,46 @@ async def execute_tool(name: str, args: dict[str, Any], db: Session) -> str:
             if not result:
                 return json.dumps({"error": "No earnings data found"})
             return json.dumps(result.model_dump(), default=str)
+
+        elif name == "get_earnings_documents":
+            ticker = args["ticker"].upper()
+            limit = args.get("limit", 5)
+
+            # Seed IR sources if needed
+            seed_ir_sources(db)
+
+            # Get SEC filings (always available)
+            sec_filings = await fetch_recent_filings(ticker, limit=limit)
+
+            # Try to get IR page content if we have a mapping
+            ir_source = get_ir_source(ticker, db)
+            ir_content = None
+            if ir_source:
+                ir_content = await fetch_earnings_content(ticker, db)
+
+            return json.dumps(
+                {
+                    "ticker": ticker,
+                    "sec_filings": [
+                        {
+                            "form_type": f.form_type,
+                            "filing_date": f.filing_date,
+                            "url": f.primary_doc_url,
+                            "description": f.description,
+                        }
+                        for f in sec_filings
+                    ],
+                    "ir_source": {
+                        "company": ir_source.company_name if ir_source else None,
+                        "ir_url": ir_source.ir_home_url if ir_source else None,
+                        "documents": [
+                            {"type": d.doc_type, "url": d.url}
+                            for d in (ir_content.documents if ir_content else [])
+                        ],
+                    },
+                },
+                default=str,
+            )
 
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
