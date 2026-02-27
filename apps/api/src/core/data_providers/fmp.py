@@ -98,32 +98,32 @@ async def fmp_financial_growth(ticker: str) -> dict | None:
         return data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else None
 
 
-async def fmp_earnings_historical(ticker: str, limit: int = 5) -> list[dict]:
-    """Get historical earnings data for a ticker from quarterly income statements.
+async def fmp_earnings_historical(ticker: str, limit: int = 12) -> list[dict]:
+    """Get historical earnings data for a ticker.
 
-    Note: Free tier limits to 5 quarterly results.
-    Returns list with: date, eps, revenue, fiscalYear, period (Q1-Q4)
+    Uses /stable/earnings endpoint which returns both estimates and actuals.
+    Returns list with: symbol, date, epsActual, epsEstimated, revenueActual, revenueEstimated
     """
     if not settings.fmp_api_key:
         return []
-    # Clamp limit to 5 for free tier
-    limit = min(limit, 5)
+
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{FMP_BASE}/income-statement",
+            f"{FMP_BASE}/earnings",
             params={
                 "symbol": ticker,
-                "period": "quarter",
-                "limit": limit,
                 "apikey": settings.fmp_api_key,
             },
-            timeout=10,
+            timeout=15,
         )
         resp.raise_for_status()
         data = resp.json()
-        if isinstance(data, str):  # Error message
+
+        if not isinstance(data, list):
             return []
-        return data if isinstance(data, list) else []
+
+        # Already sorted by date descending, just limit
+        return data[:limit]
 
 
 async def fmp_earnings_calendar(from_date: str, to_date: str) -> list[dict]:

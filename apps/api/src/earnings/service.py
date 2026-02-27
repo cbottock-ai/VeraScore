@@ -25,16 +25,14 @@ EARNINGS_CACHE_HOURS = 24
 
 
 async def get_earnings_history(
-    ticker: str, db: Session, limit: int = 5
+    ticker: str, db: Session, limit: int = 12
 ) -> EarningsHistoryResponse:
     """Get historical earnings for a ticker, fetching from API if needed.
 
-    Note: FMP free tier limits to 5 quarterly results.
-    Uses income statement data which includes actual EPS and revenue.
+    Uses earnings-calendar endpoint which provides both estimates and actuals,
+    allowing for proper surprise calculations.
     """
     ticker = ticker.upper()
-    # FMP free tier limits to 5 quarterly results
-    limit = min(limit, 5)
 
     # Check cache
     cutoff = datetime.utcnow() - timedelta(hours=EARNINGS_CACHE_HOURS)
@@ -46,7 +44,7 @@ async def get_earnings_history(
         .all()
     )
 
-    if cached:
+    if cached and len(cached) >= limit:
         records = [
             EarningsRecord(
                 ticker=e.ticker,
@@ -66,41 +64,41 @@ async def get_earnings_history(
         ]
         return EarningsHistoryResponse(ticker=ticker, records=records)
 
-    # Fetch from API (income statement endpoint)
+    # Fetch from API (earnings-calendar endpoint with historical range)
     api_data = await fmp_earnings_historical(ticker, limit)
 
     records = []
     for item in api_data:
         fiscal_date = item.get("date", "")
-        # Get fiscal info from API data
-        period = item.get("period", "")  # Q1, Q2, Q3, Q4, FY
-        fiscal_year_raw = item.get("fiscalYear", "")
 
-        # Parse quarter from period (Q1, Q2, Q3, Q4)
-        if period.startswith("Q"):
-            try:
-                fiscal_quarter = int(period[1])
-            except (ValueError, IndexError):
-                fiscal_quarter = 0
-        else:
-            fiscal_quarter = 0
-
+        # Parse quarter and year from date
         try:
-            fiscal_year = int(fiscal_year_raw)
-        except (ValueError, TypeError):
+            dt = datetime.strptime(fiscal_date, "%Y-%m-%d")
+            fiscal_quarter = (dt.month - 1) // 3 + 1
+            fiscal_year = dt.year
+        except ValueError:
+            fiscal_quarter = 0
             fiscal_year = 0
 
-        # Get actual EPS and revenue from income statement
-        eps_actual = item.get("epsDiluted") or item.get("eps")
-        revenue_actual = item.get("revenue")
+        # Get estimates and actuals directly from earnings-calendar
+        eps_estimated = item.get("epsEstimated")
+        eps_actual = item.get("epsActual")
+        revenue_estimated = item.get("revenueEstimated")
+        revenue_actual = item.get("revenueActual")
 
-        # Income statement doesn't have estimates, so these will be None
-        # Could potentially merge with analyst estimates if available
-        eps_estimated = None
+        # Calculate surprises
         eps_surprise = None
         eps_surprise_pct = None
-        revenue_estimated = None
+        if eps_estimated is not None and eps_actual is not None:
+            eps_surprise = eps_actual - eps_estimated
+            if eps_estimated != 0:
+                eps_surprise_pct = (eps_surprise / abs(eps_estimated)) * 100
+
         revenue_surprise_pct = None
+        if revenue_estimated and revenue_actual and revenue_estimated != 0:
+            revenue_surprise_pct = (
+                (revenue_actual - revenue_estimated) / revenue_estimated
+            ) * 100
 
         # Save to DB
         earnings = Earnings(
