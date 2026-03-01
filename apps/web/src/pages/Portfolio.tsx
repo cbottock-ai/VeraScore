@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listPortfolios,
@@ -9,35 +9,90 @@ import {
   deleteHolding,
   importCsv,
   exportCsv,
+  refreshPortfolio,
 } from '@/services/api'
-import type { HoldingDetail, PortfolioMetrics } from '@/types/portfolio'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import type { HoldingDetail } from '@/types/portfolio'
+
+// All available columns
+const ALL_COLUMNS = [
+  { id: 'ticker', label: 'Ticker', align: 'left' as const },
+  { id: 'score', label: 'VeraScore', align: 'center' as const },
+  { id: 'price', label: 'Last Price', align: 'right' as const },
+  { id: 'shares', label: 'Shares', align: 'right' as const },
+  { id: 'cost_per_share', label: 'Cost/Share', align: 'right' as const },
+  { id: 'day_change_pct', label: '% Change', align: 'right' as const },
+  { id: 'market_cap', label: 'Market Cap', align: 'right' as const },
+  { id: 'pe_ratio', label: 'NTM P/E', align: 'right' as const },
+  { id: 'fcf', label: 'NTM FCF', align: 'right' as const },
+  { id: 'value', label: 'Value', align: 'right' as const },
+  { id: 'gain_loss', label: 'Gain/Loss', align: 'right' as const },
+  { id: 'day_change', label: 'Day Change $', align: 'right' as const },
+  { id: 'sector', label: 'Sector', align: 'left' as const },
+  { id: 'dividend_yield', label: 'Div Yield', align: 'right' as const },
+  { id: 'eps', label: 'EPS', align: 'right' as const },
+] as const
+
+// Default visible columns
+const DEFAULT_COLUMNS = ['ticker', 'score', 'price', 'shares', 'cost_per_share', 'day_change_pct', 'market_cap', 'pe_ratio', 'fcf']
+
+// Format large numbers (market cap, revenue)
+function formatLargeNumber(num: number | null): string {
+  if (num === null) return '—'
+  if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`
+  if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+  if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+  return `$${num.toLocaleString()}`
+}
 
 export function PortfolioPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
-  return selectedId ? (
-    <PortfolioDetail id={selectedId} onBack={() => setSelectedId(null)} />
-  ) : (
-    <PortfolioList onSelect={setSelectedId} />
-  )
-}
-
-// --- Portfolio List ---
-
-function PortfolioList({ onSelect }: { onSelect: (id: number) => void }) {
-  const queryClient = useQueryClient()
-  const [showCreate, setShowCreate] = useState(false)
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
-
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey: ['portfolios'],
     queryFn: listPortfolios,
   })
+
+  // Auto-select first watchlist if none selected
+  const portfolios = data?.portfolios ?? []
+  const activeId = selectedId ?? portfolios[0]?.id ?? null
+
+  return (
+    <div>
+      {/* Header with watchlist selector */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-semibold">Watchlist</h1>
+          {portfolios.length > 0 && (
+            <select
+              value={activeId ?? ''}
+              onChange={(e) => setSelectedId(Number(e.target.value))}
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              {portfolios.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        <WatchlistActions />
+      </div>
+
+      {/* Watchlist content */}
+      {activeId ? (
+        <WatchlistTable watchlistId={activeId} />
+      ) : (
+        <EmptyState />
+      )}
+    </div>
+  )
+}
+
+// --- Watchlist Actions (Create) ---
+
+function WatchlistActions() {
+  const queryClient = useQueryClient()
+  const [showCreate, setShowCreate] = useState(false)
+  const [name, setName] = useState('')
 
   const createMutation = useMutation({
     mutationFn: createPortfolio,
@@ -45,163 +100,111 @@ function PortfolioList({ onSelect }: { onSelect: (id: number) => void }) {
       queryClient.invalidateQueries({ queryKey: ['portfolios'] })
       setShowCreate(false)
       setName('')
-      setDescription('')
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: deletePortfolio,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
-  })
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Portfolios</h1>
-        <button
-          onClick={() => setShowCreate(!showCreate)}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+    <div className="flex items-center gap-2">
+      {showCreate ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (name.trim()) createMutation.mutate({ name: name.trim() })
+          }}
+          className="flex items-center gap-2"
         >
-          {showCreate ? 'Cancel' : 'New Portfolio'}
-        </button>
-      </div>
-
-      {showCreate && (
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (name.trim()) createMutation.mutate({ name: name.trim(), description: description.trim() || undefined })
-              }}
-              className="flex flex-col gap-3 sm:flex-row sm:items-end"
-            >
-              <div className="flex-1">
-                <label className="text-sm text-muted-foreground">Name</label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="My Portfolio"
-                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                  autoFocus
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-sm text-muted-foreground">Description</label>
-                <input
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional description"
-                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!name.trim() || createMutation.isPending}
-                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                Create
-              </button>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
-        </div>
-      ) : data?.portfolios.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="text-muted-foreground">No portfolios yet. Create one to get started.</p>
-        </div>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Watchlist name"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            autoFocus
+          />
+          <button
+            type="submit"
+            disabled={!name.trim()}
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            Create
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowCreate(false); setName('') }}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </form>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {data?.portfolios.map((p) => (
-            <Card
-              key={p.id}
-              className="cursor-pointer transition-colors hover:bg-muted/50"
-              onClick={() => onSelect(p.id)}
-            >
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{p.name}</CardTitle>
-                  {confirmDeleteId === p.id ? (
-                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => deleteMutation.mutate(p.id, { onSettled: () => setConfirmDeleteId(null) })}
-                        className="text-xs font-medium text-destructive hover:underline"
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteId(null)}
-                        className="text-xs text-muted-foreground hover:underline"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setConfirmDeleteId(p.id)
-                      }}
-                      className="text-xs text-muted-foreground hover:text-destructive"
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {p.description && (
-                  <p className="text-sm text-muted-foreground mb-2">{p.description}</p>
-                )}
-                <Badge variant="secondary">{p.holdings_count} holdings</Badge>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          + New Watchlist
+        </button>
       )}
     </div>
   )
 }
 
-// --- Portfolio Detail ---
+// --- Watchlist Table ---
 
-function PortfolioDetail({ id, onBack }: { id: number; onBack: () => void }) {
+function WatchlistTable({ watchlistId }: { watchlistId: number }) {
   const queryClient = useQueryClient()
-  const [showAddHolding, setShowAddHolding] = useState(false)
+  const [showAddStock, setShowAddStock] = useState(false)
+  const [showColumnPicker, setShowColumnPicker] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; columnId: string } | null>(null)
+
+  // Column state with localStorage persistence
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
+    const saved = localStorage.getItem('watchlist-columns')
+    return saved ? JSON.parse(saved) : DEFAULT_COLUMNS
+  })
+
+  useEffect(() => {
+    localStorage.setItem('watchlist-columns', JSON.stringify(visibleColumns))
+  }, [visibleColumns])
 
   const { data: portfolio, isLoading } = useQuery({
-    queryKey: ['portfolio', id],
-    queryFn: () => getPortfolio(id),
+    queryKey: ['portfolio', watchlistId],
+    queryFn: () => getPortfolio(watchlistId),
   })
 
   const addMutation = useMutation({
-    mutationFn: (payload: { ticker: string; shares: number; cost_basis: number; purchase_date?: string }) =>
-      addHolding(id, payload),
+    mutationFn: (payload: { ticker: string; shares: number; cost_basis: number }) =>
+      addHolding(watchlistId, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portfolio', id] })
-      setShowAddHolding(false)
+      queryClient.invalidateQueries({ queryKey: ['portfolio', watchlistId] })
+      setShowAddStock(false)
     },
   })
 
   const deleteMutation = useMutation({
     mutationFn: deleteHolding,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolio', id] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio', watchlistId] })
+      setConfirmDeleteId(null)
+    },
+  })
+
+  const deleteWatchlistMutation = useMutation({
+    mutationFn: deletePortfolio,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
+  })
+
+  const refreshMutation = useMutation({
+    mutationFn: () => refreshPortfolio(watchlistId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolio', watchlistId] }),
   })
 
   const handleExport = async () => {
-    const csv = await exportCsv(id)
+    const csv = await exportCsv(watchlistId)
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `portfolio_${id}.csv`
+    a.download = `watchlist_${watchlistId}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -209,283 +212,401 @@ function PortfolioDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    await importCsv(id, file)
-    queryClient.invalidateQueries({ queryKey: ['portfolio', id] })
+    try {
+      const result = await importCsv(watchlistId, file)
+      if (result.errors.length > 0) {
+        alert(`Import completed with errors:\n${result.errors.join('\n')}`)
+      } else if (result.imported === 0) {
+        alert('No stocks were imported. Check your CSV format.')
+      }
+      queryClient.invalidateQueries({ queryKey: ['portfolio', watchlistId] })
+    } catch (err) {
+      alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
     e.target.value = ''
   }
 
+  const removeColumn = (columnId: string) => {
+    if (columnId === 'ticker') return // Can't remove ticker
+    setVisibleColumns(cols => cols.filter(c => c !== columnId))
+    setContextMenu(null)
+  }
+
+  const addColumn = (columnId: string) => {
+    if (!visibleColumns.includes(columnId)) {
+      setVisibleColumns(cols => [...cols, columnId])
+    }
+    setShowColumnPicker(false)
+  }
+
+  const handleContextMenu = (e: React.MouseEvent, columnId: string) => {
+    e.preventDefault()
+    if (columnId === 'ticker') return // Can't remove ticker
+    setContextMenu({ x: e.clientX, y: e.clientY, columnId })
+  }
+
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null)
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [])
+
   if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    )
+    return <div className="h-64 rounded-xl bg-card animate-pulse" />
   }
 
   if (!portfolio) {
-    return <p className="text-muted-foreground">Portfolio not found.</p>
+    return <p className="text-muted-foreground">Watchlist not found.</p>
   }
+
+  const holdings = portfolio.holdings
+  const columns = ALL_COLUMNS.filter(c => visibleColumns.includes(c.id))
+  const availableColumns = ALL_COLUMNS.filter(c => !visibleColumns.includes(c.id))
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">
-          &larr; Back
-        </button>
-        <h1 className="text-2xl font-semibold">{portfolio.name}</h1>
-        {portfolio.description && (
-          <span className="text-sm text-muted-foreground">{portfolio.description}</span>
-        )}
-      </div>
+      {/* Summary bar */}
+      {portfolio.metrics && holdings.length > 0 && (
+        <div className="flex items-center gap-6 mb-4 text-sm">
+          <div>
+            <span className="text-muted-foreground">Total Value: </span>
+            <span className="font-semibold">${portfolio.metrics.total_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Gain/Loss: </span>
+            <span className={`font-semibold ${portfolio.metrics.total_gain_loss >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              {portfolio.metrics.total_gain_loss >= 0 ? '+' : ''}${portfolio.metrics.total_gain_loss.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              {' '}({portfolio.metrics.total_gain_loss_pct >= 0 ? '+' : ''}{portfolio.metrics.total_gain_loss_pct.toFixed(2)}%)
+            </span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Avg Score: </span>
+            <span className="font-semibold">{portfolio.metrics.weighted_score?.toFixed(0) ?? '—'}</span>
+          </div>
+        </div>
+      )}
 
-      {/* Metrics Summary */}
-      {portfolio.metrics && <MetricsSummary metrics={portfolio.metrics} />}
-
-      {/* Actions */}
-      <div className="flex items-center gap-3 mb-4">
+      {/* Actions bar */}
+      <div className="flex items-center gap-2 mb-4">
         <button
-          onClick={() => setShowAddHolding(!showAddHolding)}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          onClick={() => setShowAddStock(!showAddStock)}
+          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
-          {showAddHolding ? 'Cancel' : 'Add Holding'}
+          {showAddStock ? 'Cancel' : '+ Add Stock'}
         </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowColumnPicker(!showColumnPicker)}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
+          >
+            + Add Column
+          </button>
+          {showColumnPicker && availableColumns.length > 0 && (
+            <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg py-1 z-10 min-w-[150px]">
+              {availableColumns.map(col => (
+                <button
+                  key={col.id}
+                  onClick={() => addColumn(col.id)}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted"
+                >
+                  {col.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => refreshMutation.mutate()}
+          disabled={refreshMutation.isPending}
+          className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+        >
+          {refreshMutation.isPending ? 'Refreshing...' : 'Refresh'}
+        </button>
+        <div className="flex-1" />
         <button
           onClick={handleExport}
-          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+          className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
         >
-          Export CSV
+          Export
         </button>
-        <label className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted cursor-pointer">
-          Import CSV
+        <label className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted cursor-pointer">
+          Import
           <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
         </label>
+        <button
+          onClick={() => {
+            if (confirm('Delete this watchlist?')) deleteWatchlistMutation.mutate(watchlistId)
+          }}
+          className="text-sm text-muted-foreground hover:text-destructive"
+        >
+          Delete
+        </button>
       </div>
 
-      {/* Add Holding Form */}
-      {showAddHolding && <AddHoldingForm onSubmit={(d) => addMutation.mutate(d)} isPending={addMutation.isPending} />}
+      {/* Add stock form */}
+      {showAddStock && (
+        <AddStockForm onSubmit={(d) => addMutation.mutate(d)} isPending={addMutation.isPending} />
+      )}
 
-      {/* Holdings Table */}
-      <HoldingsTable
-        holdings={portfolio.holdings}
-        onDelete={(holdingId) => {
-          if (confirm('Remove this holding?')) deleteMutation.mutate(holdingId)
-        }}
-      />
+      {/* Context menu for column removal */}
+      {contextMenu && (
+        <div
+          className="fixed bg-card border border-border rounded-lg shadow-lg py-1 z-50"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            onClick={() => removeColumn(contextMenu.columnId)}
+            className="w-full text-left px-4 py-2 text-sm hover:bg-muted text-destructive"
+          >
+            Remove Column
+          </button>
+        </div>
+      )}
+
+      {/* Holdings table - always show headers */}
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/50 text-left">
+              {columns.map(col => (
+                <th
+                  key={col.id}
+                  onContextMenu={(e) => handleContextMenu(e, col.id)}
+                  className={`px-4 py-3 font-medium cursor-default select-none ${
+                    col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
+                  } ${col.id !== 'ticker' ? 'hover:bg-muted/80' : ''}`}
+                  title={col.id !== 'ticker' ? 'Right-click to remove' : ''}
+                >
+                  {col.label}
+                </th>
+              ))}
+              <th className="px-4 py-3 w-10" />
+            </tr>
+          </thead>
+          <tbody>
+            {holdings.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length + 1} className="px-4 py-12 text-center text-muted-foreground">
+                  No stocks yet. Click "+ Add Stock" to get started.
+                </td>
+              </tr>
+            ) : (
+              holdings.map((h) => (
+                <HoldingRow
+                  key={h.id}
+                  holding={h}
+                  columns={columns}
+                  isConfirmingDelete={confirmDeleteId === h.id}
+                  onConfirmDelete={() => setConfirmDeleteId(h.id)}
+                  onCancelDelete={() => setConfirmDeleteId(null)}
+                  onDelete={() => deleteMutation.mutate(h.id)}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
 
-// --- Metrics Summary Cards ---
+// --- Holding Row ---
 
-function MetricsSummary({ metrics }: { metrics: PortfolioMetrics }) {
-  const glColor = metrics.total_gain_loss >= 0 ? 'text-green-500' : 'text-red-500'
-
-  return (
-    <div className="grid gap-4 mb-6 grid-cols-2 md:grid-cols-4">
-      <Card>
-        <CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Total Value</p>
-          <p className="text-xl font-semibold font-mono">${metrics.total_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Total Cost</p>
-          <p className="text-xl font-semibold font-mono">${metrics.total_cost_basis.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">Gain/Loss</p>
-          <p className={`text-xl font-semibold font-mono ${glColor}`}>
-            {metrics.total_gain_loss >= 0 ? '+' : ''}${metrics.total_gain_loss.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </p>
-          <p className={`text-xs font-mono ${glColor}`}>
-            {metrics.total_gain_loss_pct >= 0 ? '+' : ''}{metrics.total_gain_loss_pct.toFixed(2)}%
-          </p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <p className="text-xs text-muted-foreground">VeraScore</p>
-          <p className="text-xl font-semibold font-mono">
-            {metrics.weighted_score !== null ? metrics.weighted_score.toFixed(1) : '—'}
-          </p>
-          <p className="text-xs text-muted-foreground">{metrics.holdings_count} holdings</p>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-// --- Holdings Table ---
-
-function HoldingsTable({
-  holdings,
+function HoldingRow({
+  holding: h,
+  columns,
+  isConfirmingDelete,
+  onConfirmDelete,
+  onCancelDelete,
   onDelete,
 }: {
-  holdings: HoldingDetail[]
-  onDelete: (id: number) => void
+  holding: HoldingDetail
+  columns: typeof ALL_COLUMNS[number][]
+  isConfirmingDelete: boolean
+  onConfirmDelete: () => void
+  onCancelDelete: () => void
+  onDelete: () => void
 }) {
-  if (holdings.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-border p-8 text-center">
-        <p className="text-muted-foreground">No holdings yet. Add a stock to get started.</p>
-      </div>
-    )
+  const getScoreColor = (score: number | null) => {
+    if (score === null) return ''
+    if (score >= 70) return 'text-green-500'
+    if (score >= 50) return 'text-yellow-500'
+    return 'text-red-500'
+  }
+
+  const getCellValue = (columnId: string) => {
+    const dayPositive = (h.day_change ?? 0) >= 0
+    const dayColor = dayPositive ? 'text-green-500' : 'text-red-500'
+    const glPositive = (h.gain_loss ?? 0) >= 0
+    const glColor = h.gain_loss !== null ? (glPositive ? 'text-green-500' : 'text-red-500') : ''
+
+    switch (columnId) {
+      case 'ticker':
+        return <span className="font-semibold">{h.ticker}</span>
+      case 'score':
+        return <span className={`font-semibold ${getScoreColor(h.score)}`}>{h.score?.toFixed(0) ?? '—'}</span>
+      case 'price':
+        return <span className="font-mono">{h.current_price !== null ? `$${h.current_price.toFixed(2)}` : '—'}</span>
+      case 'shares':
+        return <span className="font-mono">{h.shares}</span>
+      case 'cost_per_share':
+        return <span className="font-mono">{h.cost_per_share !== null ? `$${h.cost_per_share.toFixed(2)}` : '—'}</span>
+      case 'day_change_pct':
+        return (
+          <span className={`font-mono ${dayColor}`}>
+            {h.day_change_pct !== null ? `${dayPositive ? '+' : ''}${h.day_change_pct.toFixed(2)}%` : '—'}
+          </span>
+        )
+      case 'day_change':
+        return (
+          <span className={`font-mono ${dayColor}`}>
+            {h.day_change !== null ? `${dayPositive ? '+' : ''}$${h.day_change.toFixed(2)}` : '—'}
+          </span>
+        )
+      case 'market_cap':
+        return <span className="font-mono text-muted-foreground">{formatLargeNumber(h.market_cap)}</span>
+      case 'pe_ratio':
+        return <span className="font-mono text-muted-foreground">{h.pe_ratio?.toFixed(1) ?? '—'}</span>
+      case 'fcf':
+        return <span className="font-mono text-muted-foreground">—</span> // TODO: Add FCF data
+      case 'value':
+        return <span className="font-mono">{h.current_value !== null ? `$${h.current_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}</span>
+      case 'gain_loss':
+        return (
+          <span className={`font-mono ${glColor}`}>
+            {h.gain_loss !== null ? (
+              <>
+                {glPositive ? '+' : ''}${Math.abs(h.gain_loss).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                <span className="text-xs ml-1">({glPositive ? '+' : ''}{h.gain_loss_pct?.toFixed(1) ?? '0.0'}%)</span>
+              </>
+            ) : '—'}
+          </span>
+        )
+      case 'sector':
+        return <span className="text-muted-foreground truncate max-w-[120px]">{h.sector || '—'}</span>
+      case 'dividend_yield':
+        return <span className="font-mono text-muted-foreground">{h.dividend_yield !== null ? `${h.dividend_yield.toFixed(2)}%` : '—'}</span>
+      case 'eps':
+        return <span className="font-mono text-muted-foreground">{h.eps !== null ? `$${h.eps.toFixed(2)}` : '—'}</span>
+      default:
+        return '—'
+    }
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border bg-muted/50">
-            <th className="px-4 py-2 text-left font-medium">Ticker</th>
-            <th className="px-4 py-2 text-right font-medium">Shares</th>
-            <th className="px-4 py-2 text-right font-medium">Cost Basis</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
-            <th className="px-4 py-2 text-right font-medium">Value</th>
-            <th className="px-4 py-2 text-right font-medium">Gain/Loss</th>
-            <th className="px-4 py-2 text-right font-medium">Score</th>
-            <th className="px-4 py-2 text-left font-medium">Sector</th>
-            <th className="px-4 py-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {holdings.map((h) => {
-            const glColor =
-              h.gain_loss !== null ? (h.gain_loss >= 0 ? 'text-green-500' : 'text-red-500') : ''
-            return (
-              <tr key={h.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-                <td className="px-4 py-2 font-medium">{h.ticker}</td>
-                <td className="px-4 py-2 text-right font-mono">{h.shares}</td>
-                <td className="px-4 py-2 text-right font-mono">${h.cost_basis.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                <td className="px-4 py-2 text-right font-mono">
-                  {h.current_price !== null ? `$${h.current_price.toFixed(2)}` : '—'}
-                </td>
-                <td className="px-4 py-2 text-right font-mono">
-                  {h.current_value !== null ? `$${h.current_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
-                </td>
-                <td className={`px-4 py-2 text-right font-mono ${glColor}`}>
-                  {h.gain_loss !== null ? (
-                    <>
-                      {h.gain_loss >= 0 ? '+' : ''}${h.gain_loss.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      {h.gain_loss_pct !== null && (
-                        <span className="ml-1 text-xs">({h.gain_loss_pct >= 0 ? '+' : ''}{h.gain_loss_pct.toFixed(1)}%)</span>
-                      )}
-                    </>
-                  ) : (
-                    '—'
-                  )}
-                </td>
-                <td className="px-4 py-2 text-right font-mono">
-                  {h.score !== null ? h.score.toFixed(1) : '—'}
-                </td>
-                <td className="px-4 py-2 text-muted-foreground">{h.sector || '—'}</td>
-                <td className="px-4 py-2">
-                  <button
-                    onClick={() => onDelete(h.id)}
-                    className="text-xs text-muted-foreground hover:text-destructive"
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+    <tr className="border-b border-border last:border-0 hover:bg-muted/30">
+      {columns.map(col => (
+        <td
+          key={col.id}
+          className={`px-4 py-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''}`}
+        >
+          {getCellValue(col.id)}
+        </td>
+      ))}
+      <td className="px-4 py-3">
+        {isConfirmingDelete ? (
+          <div className="flex gap-1">
+            <button onClick={onDelete} className="text-xs text-destructive hover:underline">Yes</button>
+            <button onClick={onCancelDelete} className="text-xs text-muted-foreground hover:underline">No</button>
+          </div>
+        ) : (
+          <button
+            onClick={onConfirmDelete}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </td>
+    </tr>
   )
 }
 
-// --- Add Holding Form ---
+// --- Add Stock Form ---
 
-function AddHoldingForm({
+function AddStockForm({
   onSubmit,
   isPending,
 }: {
-  onSubmit: (data: { ticker: string; shares: number; cost_basis: number; purchase_date?: string }) => void
+  onSubmit: (data: { ticker: string; shares: number; cost_basis: number }) => void
   isPending: boolean
 }) {
   const [ticker, setTicker] = useState('')
   const [shares, setShares] = useState('')
   const [costBasis, setCostBasis] = useState('')
-  const [purchaseDate, setPurchaseDate] = useState('')
 
   return (
-    <Card className="mb-4">
-      <CardContent className="pt-6">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!ticker.trim() || !shares || !costBasis) return
-            onSubmit({
-              ticker: ticker.trim().toUpperCase(),
-              shares: parseFloat(shares),
-              cost_basis: parseFloat(costBasis),
-              purchase_date: purchaseDate || undefined,
-            })
-            setTicker('')
-            setShares('')
-            setCostBasis('')
-            setPurchaseDate('')
-          }}
-          className="flex flex-wrap gap-3 items-end"
+    <div className="bg-card rounded-xl border border-border p-4 mb-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!ticker.trim() || !shares || !costBasis) return
+          onSubmit({
+            ticker: ticker.trim().toUpperCase(),
+            shares: parseFloat(shares),
+            cost_basis: parseFloat(costBasis),
+          })
+          setTicker('')
+          setShares('')
+          setCostBasis('')
+        }}
+        className="flex items-end gap-4"
+      >
+        <div>
+          <label className="text-xs text-muted-foreground">Ticker</label>
+          <input
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value)}
+            placeholder="AAPL"
+            className="mt-1 w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-primary/50"
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Shares</label>
+          <input
+            type="number"
+            step="any"
+            value={shares}
+            onChange={(e) => setShares(e.target.value)}
+            placeholder="100"
+            className="mt-1 w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Total Cost ($)</label>
+          <input
+            type="number"
+            step="any"
+            value={costBasis}
+            onChange={(e) => setCostBasis(e.target.value)}
+            placeholder="15000"
+            className="mt-1 w-32 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={!ticker.trim() || !shares || !costBasis || isPending}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          <div>
-            <label className="text-sm text-muted-foreground">Ticker</label>
-            <input
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              placeholder="AAPL"
-              className="mt-1 w-24 rounded-md border border-border bg-background px-3 py-2 text-sm uppercase"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground">Shares</label>
-            <input
-              type="number"
-              step="any"
-              value={shares}
-              onChange={(e) => setShares(e.target.value)}
-              placeholder="100"
-              className="mt-1 w-24 rounded-md border border-border bg-background px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground">Total Cost</label>
-            <input
-              type="number"
-              step="any"
-              value={costBasis}
-              onChange={(e) => setCostBasis(e.target.value)}
-              placeholder="15000"
-              className="mt-1 w-32 rounded-md border border-border bg-background px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground">Date</label>
-            <input
-              type="date"
-              value={purchaseDate}
-              onChange={(e) => setPurchaseDate(e.target.value)}
-              className="mt-1 w-36 rounded-md border border-border bg-background px-3 py-2 text-sm"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={!ticker.trim() || !shares || !costBasis || isPending}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            Add
-          </button>
-        </form>
-      </CardContent>
-    </Card>
+          Add
+        </button>
+      </form>
+    </div>
+  )
+}
+
+// --- Empty State ---
+
+function EmptyState() {
+  return (
+    <div className="rounded-xl border-2 border-dashed border-border p-16 text-center">
+      <div className="text-4xl mb-4">📋</div>
+      <p className="text-muted-foreground mb-2">No watchlists yet</p>
+      <p className="text-sm text-muted-foreground">Create a watchlist to start tracking stocks</p>
+    </div>
   )
 }

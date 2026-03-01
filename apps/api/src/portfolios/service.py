@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import logging
@@ -120,26 +121,55 @@ def delete_holding(holding_id: int, db: Session) -> bool:
 
 # --- CSV Import/Export ---
 
+def _get_csv_value(row: dict, *keys: str) -> str:
+    """Get value from row trying multiple possible column names (case-insensitive)."""
+    row_lower = {k.lower(): v for k, v in row.items()}
+    for key in keys:
+        val = row_lower.get(key.lower(), "")
+        if val:
+            return val.strip()
+    return ""
+
+
+def _parse_number(value: str) -> float:
+    """Parse a number that may have $, commas, or other formatting."""
+    if not value:
+        return 0.0
+    # Remove $, commas, spaces
+    cleaned = value.replace("$", "").replace(",", "").strip()
+    return float(cleaned) if cleaned else 0.0
+
+
 def import_csv(portfolio_id: int, csv_content: str, db: Session) -> CsvImportResult:
     portfolio = db.get(Portfolio, portfolio_id)
     if not portfolio:
         return CsvImportResult(imported=0, errors=["Portfolio not found"])
 
-    reader = csv.DictReader(io.StringIO(csv_content))
+    # Detect delimiter (tab or comma)
+    first_line = csv_content.split('\n')[0] if csv_content else ''
+    delimiter = '\t' if '\t' in first_line else ','
+
+    reader = csv.DictReader(io.StringIO(csv_content), delimiter=delimiter)
     imported = 0
     errors = []
 
     for i, row in enumerate(reader, start=2):
         try:
-            ticker = row.get("ticker", "").strip().upper()
+            # Flexible column names for ticker
+            ticker = _get_csv_value(row, "ticker", "symbol").upper()
             if not ticker:
-                errors.append(f"Row {i}: missing ticker")
+                errors.append(f"Row {i}: missing ticker/symbol")
                 continue
 
-            shares = float(row.get("shares", 0))
-            cost_basis = float(row.get("cost_basis", 0))
-            purchase_date = row.get("purchase_date", "").strip() or None
-            notes = row.get("notes", "").strip() or None
+            # Flexible column names for shares
+            shares_str = _get_csv_value(row, "shares", "quantity", "qty", "qty (quantity)")
+            shares = _parse_number(shares_str)
+
+            cost_basis_str = _get_csv_value(row, "cost_basis", "cost basis", "cost", "total_cost")
+            cost_basis = _parse_number(cost_basis_str)
+
+            purchase_date = _get_csv_value(row, "purchase_date", "date") or None
+            notes = _get_csv_value(row, "notes", "note") or None
 
             holding = Holding(
                 portfolio_id=portfolio_id,
@@ -173,11 +203,36 @@ def export_csv(portfolio_id: int, db: Session) -> str | None:
 
 # --- Enrichment (async) ---
 
+async def _fetch_holding_data(ticker: str) -> tuple[dict | None, dict | None]:
+    """Fetch stock info and fundamentals in parallel for a single ticker."""
+    try:
+        info, fundamentals = await asyncio.gather(
+            fetch_stock_info(ticker),
+            fetch_fundamentals(ticker),
+            return_exceptions=True
+        )
+        # Handle exceptions returned by gather
+        if isinstance(info, Exception):
+            info = None
+        if isinstance(fundamentals, Exception):
+            fundamentals = None
+        return info, fundamentals
+    except Exception:
+        return None, None
+
+
 async def enrich_holdings(holdings: list[Holding]) -> list[HoldingDetail]:
-    """Fetch current prices and enrich holdings with live data."""
+    """Fetch current prices and enrich holdings with live data (parallel)."""
+    if not holdings:
+        return []
+
+    # Fetch all data in parallel
+    tickers = [h.ticker for h in holdings]
+    fetch_tasks = [_fetch_holding_data(ticker) for ticker in tickers]
+    all_data = await asyncio.gather(*fetch_tasks)
+
     results = []
-    for h in holdings:
-        info = await fetch_stock_info(h.ticker)
+    for h, (info, fundamentals) in zip(holdings, all_data):
         price = info.get("price") if info else None
         current_value = price * h.shares if price else None
         gain_loss = current_value - h.cost_basis if current_value else None
@@ -185,12 +240,21 @@ async def enrich_holdings(holdings: list[Holding]) -> list[HoldingDetail]:
 
         # Get score
         score = None
-        try:
-            fundamentals = await fetch_fundamentals(h.ticker)
-            score_result = calculate_composite_score(fundamentals, info)
-            score = score_result.get("overall_score")
-        except Exception:
-            pass
+        if fundamentals and info:
+            try:
+                score_result = calculate_composite_score(fundamentals, info)
+                score = score_result.get("overall_score")
+            except Exception:
+                pass
+
+        # Extract fundamentals
+        pe_ratio = None
+        dividend_yield = None
+        if fundamentals:
+            valuation = fundamentals.get("valuation", {})
+            pe_ratio = valuation.get("peRatioTTM") or valuation.get("pe_ratio")
+            dividend = fundamentals.get("dividend", {})
+            dividend_yield = dividend.get("dividendYielTTM") or dividend.get("dividendYield")
 
         results.append(HoldingDetail(
             id=h.id,
@@ -202,9 +266,16 @@ async def enrich_holdings(holdings: list[Holding]) -> list[HoldingDetail]:
             notes=h.notes,
             current_price=round(price, 2) if price else None,
             current_value=round(current_value, 2) if current_value else None,
+            day_change=info.get("change") if info else None,
+            day_change_pct=info.get("changePercent") if info else None,
             gain_loss=round(gain_loss, 2) if gain_loss is not None else None,
             gain_loss_pct=round(gain_loss_pct, 2) if gain_loss_pct is not None else None,
             sector=info.get("sector") if info else None,
+            market_cap=info.get("marketCap") if info else None,
+            pe_ratio=round(pe_ratio, 2) if pe_ratio else None,
+            revenue_ttm=None,
+            eps=info.get("eps") if info else None,
+            dividend_yield=round(dividend_yield, 2) if dividend_yield else None,
             score=score,
         ))
     return results

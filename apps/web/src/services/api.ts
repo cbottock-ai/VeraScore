@@ -107,6 +107,11 @@ export async function exportCsv(portfolioId: number): Promise<string> {
   return data
 }
 
+export async function refreshPortfolio(portfolioId: number): Promise<PortfolioDetailResponse> {
+  const { data } = await api.post<PortfolioDetailResponse>(`/portfolios/${portfolioId}/refresh`)
+  return data
+}
+
 // --- Chat ---
 
 export async function listConversations(): Promise<ConversationSummary[]> {

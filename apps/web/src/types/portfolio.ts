@@ -20,11 +20,23 @@ export interface HoldingDetail {
   cost_per_share: number | null
   purchase_date: string | null
   notes: string | null
+  // Price data
   current_price: number | null
   current_value: number | null
+  day_change: number | null
+  day_change_pct: number | null
+  // Gain/loss from cost basis
   gain_loss: number | null
   gain_loss_pct: number | null
+  // Stock info
   sector: string | null
+  market_cap: number | null
+  // Fundamentals
+  pe_ratio: number | null
+  revenue_ttm: number | null
+  eps: number | null
+  dividend_yield: number | null
+  // VeraScore
   score: number | null
 }
 

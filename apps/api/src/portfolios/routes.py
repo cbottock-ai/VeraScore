@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
+from src.core.data_providers.cache import cache_clear_ticker
 from src.core.database import get_db
 from src.portfolios.schemas import (
     CsvImportResult,
@@ -51,6 +52,30 @@ async def detail(portfolio_id: int, db: Session = Depends(get_db)):
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
 
+    enriched = await enrich_holdings(portfolio.holdings)
+    metrics = await calculate_portfolio_metrics(enriched)
+
+    return PortfolioDetailResponse(
+        id=portfolio.id,
+        name=portfolio.name,
+        description=portfolio.description,
+        metrics=metrics,
+        holdings=enriched,
+    )
+
+
+@router.post("/{portfolio_id}/refresh", response_model=PortfolioDetailResponse)
+async def refresh(portfolio_id: int, db: Session = Depends(get_db)):
+    """Clear cache and fetch fresh data for all holdings."""
+    portfolio = get_portfolio(portfolio_id, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    # Clear cache for each ticker
+    for holding in portfolio.holdings:
+        cache_clear_ticker(holding.ticker)
+
+    # Fetch fresh data
     enriched = await enrich_holdings(portfolio.holdings)
     metrics = await calculate_portfolio_metrics(enriched)
 

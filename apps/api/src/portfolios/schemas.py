@@ -48,11 +48,23 @@ class HoldingDetail(BaseModel):
     cost_per_share: float | None = None
     purchase_date: str | None = None
     notes: str | None = None
+    # Price data
     current_price: float | None = None
     current_value: float | None = None
+    day_change: float | None = None
+    day_change_pct: float | None = None
+    # Gain/loss from cost basis
     gain_loss: float | None = None
     gain_loss_pct: float | None = None
+    # Stock info
     sector: str | None = None
+    market_cap: float | None = None
+    # Fundamentals
+    pe_ratio: float | None = None
+    revenue_ttm: float | None = None
+    eps: float | None = None
+    dividend_yield: float | None = None
+    # VeraScore
     score: float | None = None
 
 
