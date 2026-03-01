@@ -64,10 +64,10 @@ export function Layout() {
   return (
     <div className="min-h-screen bg-background text-foreground flex">
       {/* Sidebar */}
-      <aside className="w-56 border-r border-border flex flex-col bg-muted/30">
+      <aside className="w-56 border-r border-sidebar-border flex flex-col bg-sidebar">
         {/* Logo */}
-        <div className="h-14 flex items-center px-4 border-b border-border">
-          <span className="text-lg font-semibold">VeraScore</span>
+        <div className="h-14 flex items-center px-4 border-b border-sidebar-border">
+          <span className="text-lg font-semibold text-primary">VeraScore</span>
         </div>
 
         {/* Navigation */}
@@ -78,10 +78,10 @@ export function Layout() {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors mb-1 ${
+                `flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors mb-1 ${
                   isActive
-                    ? 'bg-accent text-accent-foreground font-medium'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                 }`
               }
             >
@@ -95,7 +95,7 @@ export function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="h-14 border-b border-border flex items-center px-6">
+        <header className="h-14 border-b border-sidebar-border flex items-center px-6 bg-sidebar text-sidebar-foreground">
           <div className="ml-auto">
             <StockSearch />
           </div>

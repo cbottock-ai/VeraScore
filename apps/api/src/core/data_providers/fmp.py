@@ -189,3 +189,44 @@ async def fmp_transcript_list(ticker: str) -> list[dict]:
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, list) else []
+
+
+async def fmp_quote(symbol: str) -> dict | None:
+    """Get real-time quote for a symbol (stock or index ETF)."""
+    if not settings.fmp_api_key:
+        return None
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/quote",
+            params={"symbol": symbol, "apikey": settings.fmp_api_key},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data[0] if isinstance(data, list) and data else None
+
+
+async def fmp_batch_quote(symbols: list[str]) -> list[dict]:
+    """Get real-time quotes for multiple symbols."""
+    if not settings.fmp_api_key:
+        return []
+
+    # FMP stable API doesn't support batch, so fetch individually
+    results = []
+    async with httpx.AsyncClient() as client:
+        for symbol in symbols:
+            try:
+                resp = await client.get(
+                    f"{FMP_BASE}/quote",
+                    params={"symbol": symbol, "apikey": settings.fmp_api_key},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                if isinstance(data, list) and data:
+                    results.append(data[0])
+                elif isinstance(data, dict) and data:
+                    results.append(data)
+            except Exception:
+                continue
+    return results

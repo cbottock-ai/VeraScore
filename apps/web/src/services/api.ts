@@ -39,6 +39,32 @@ export async function getScores(ticker: string): Promise<StockScoresResponse> {
   return data
 }
 
+export interface MarketIndex {
+  symbol: string
+  name: string
+  price: number | null
+  change: number | null
+  changePercent: number | null
+}
+
+export async function getMarketIndices(): Promise<MarketIndex[]> {
+  const { data } = await api.get<MarketIndex[]>('/stocks/market/indices')
+  return data
+}
+
+export interface StockQuote {
+  symbol: string
+  name: string
+  price: number | null
+  change: number | null
+  changePercent: number | null
+}
+
+export async function getQuotes(tickers: string[]): Promise<StockQuote[]> {
+  const { data } = await api.post<StockQuote[]>('/stocks/quotes', tickers)
+  return data
+}
+
 // --- Portfolios ---
 
 export async function listPortfolios(): Promise<PortfolioListResponse> {
