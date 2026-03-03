@@ -14,14 +14,21 @@ def _get_stock_info_sync(ticker: str) -> dict:
         t = yf.Ticker(ticker)
         info = t.info
         fast = t.fast_info
+
+        # Use regularMarket fields for more accurate real-time data
+        price = info.get("regularMarketPrice") or (float(fast.last_price) if fast.last_price else info.get("currentPrice"))
+        change = info.get("regularMarketChange")
+        change_percent = info.get("regularMarketChangePercent")
+
+        # Fallback calculation if regularMarket fields aren't available
+        if change_percent is None and fast.last_price and fast.previous_close:
+            change_percent = round(float(fast.last_price / fast.previous_close - 1) * 100, 2)
+
         return {
             # Price
-            "price": float(fast.last_price) if fast.last_price else info.get("currentPrice"),
-            "change_percent": (
-                round(float(fast.last_price / fast.previous_close - 1) * 100, 2)
-                if fast.last_price and fast.previous_close
-                else None
-            ),
+            "price": price,
+            "change": round(change, 2) if change is not None else None,
+            "change_percent": round(change_percent, 2) if change_percent is not None else None,
             # Profile
             "name": info.get("longName") or info.get("shortName"),
             "sector": info.get("sector"),

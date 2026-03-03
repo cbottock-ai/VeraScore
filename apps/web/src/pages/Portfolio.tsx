@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   listPortfolios,
   getAvailableColumns,
@@ -230,10 +230,11 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
   }, [allColumns])
 
   // Fetch portfolio data with dynamic columns
-  const { data: portfolio, isLoading } = useQuery({
+  const { data: portfolio, isLoading, isFetching } = useQuery({
     queryKey: ['portfolio', watchlistId, visibleColumns],
     queryFn: () => getPortfolioDynamic(watchlistId, visibleColumns),
     enabled: visibleColumns.length > 0,
+    placeholderData: keepPreviousData, // Keep showing old data while fetching new columns
   })
 
   const addMutation = useMutation({
@@ -431,7 +432,7 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
       )}
 
       {/* Holdings table */}
-      <div className="overflow-x-auto rounded-xl border border-border">
+      <div className={`overflow-x-auto rounded-xl border border-border transition-opacity ${isFetching ? 'opacity-70' : ''}`}>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50 text-left">
