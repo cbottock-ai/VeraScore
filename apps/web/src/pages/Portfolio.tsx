@@ -201,12 +201,19 @@ function WatchlistActions() {
 
 // --- Watchlist Table ---
 
+// Sort direction type
+type SortDirection = 'asc' | 'desc' | null
+
 function WatchlistTable({ watchlistId }: { watchlistId: number }) {
   const queryClient = useQueryClient()
   const [showAddStock, setShowAddStock] = useState(false)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; columnId: string } | null>(null)
+
+  // Sort state
+  const [sortColumn, setSortColumn] = useState<string | null>(null)
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null)
 
   // Column state with localStorage persistence
   const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
@@ -316,6 +323,22 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
     setContextMenu({ x: e.clientX, y: e.clientY, columnId })
   }
 
+  // Handle column header click for sorting
+  const handleSort = (columnId: string) => {
+    if (sortColumn === columnId) {
+      // Cycle: asc -> desc -> none
+      if (sortDirection === 'asc') {
+        setSortDirection('desc')
+      } else if (sortDirection === 'desc') {
+        setSortColumn(null)
+        setSortDirection(null)
+      }
+    } else {
+      setSortColumn(columnId)
+      setSortDirection('asc')
+    }
+  }
+
   // Close context menu on click outside
   useEffect(() => {
     const handleClick = () => setContextMenu(null)
@@ -331,9 +354,36 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
     return <p className="text-muted-foreground">Watchlist not found.</p>
   }
 
-  const holdings = portfolio.holdings
   const columns = visibleColumns.map(id => columnMap[id]).filter(Boolean)
   const hiddenColumns = allColumns.filter(c => !visibleColumns.includes(c.id))
+
+  // Sort holdings
+  const holdings = useMemo(() => {
+    if (!sortColumn || !sortDirection) return portfolio.holdings
+
+    return [...portfolio.holdings].sort((a, b) => {
+      const aVal = a[sortColumn]
+      const bVal = b[sortColumn]
+
+      // Handle nulls - always sort to bottom
+      if (aVal === null || aVal === undefined) return 1
+      if (bVal === null || bVal === undefined) return -1
+
+      // Numeric comparison
+      const aNum = typeof aVal === 'number' ? aVal : parseFloat(String(aVal))
+      const bNum = typeof bVal === 'number' ? bVal : parseFloat(String(bVal))
+
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        return sortDirection === 'asc' ? aNum - bNum : bNum - aNum
+      }
+
+      // String comparison
+      const aStr = String(aVal).toLowerCase()
+      const bStr = String(bVal).toLowerCase()
+      const cmp = aStr.localeCompare(bStr)
+      return sortDirection === 'asc' ? cmp : -cmp
+    })
+  }, [portfolio.holdings, sortColumn, sortDirection])
 
   return (
     <div>
@@ -425,16 +475,48 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50 text-left">
-              {columns.map(col => (
-                <th
-                  key={col.id}
-                  onContextMenu={(e) => handleContextMenu(e, col.id)}
-                  className={`px-4 py-3 font-medium cursor-default select-none ${getAlignment(col.format)} ${col.id !== 'ticker' ? 'hover:bg-muted/80' : ''}`}
-                  title={col.id !== 'ticker' ? 'Right-click to remove' : ''}
-                >
-                  {col.label}
-                </th>
-              ))}
+              {columns.map(col => {
+                const isSorted = sortColumn === col.id
+                const isRemovable = col.id !== 'ticker'
+
+                return (
+                  <th
+                    key={col.id}
+                    onClick={() => handleSort(col.id)}
+                    onContextMenu={(e) => handleContextMenu(e, col.id)}
+                    className={`px-4 py-3 font-medium select-none cursor-pointer group ${getAlignment(col.format)} hover:bg-muted/80`}
+                    title={isRemovable ? 'Click to sort · Right-click to remove' : 'Click to sort'}
+                  >
+                    <div className={`flex items-center gap-1 ${col.format !== 'string' ? 'justify-end' : ''}`}>
+                      <span>{col.label}</span>
+                      {/* Sort indicator */}
+                      <span className={`transition-opacity ${isSorted ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`}>
+                        {isSorted && sortDirection === 'asc' ? (
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                          </svg>
+                        ) : isSorted && sortDirection === 'desc' ? (
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4-4 4 4M16 15l-4 4-4-4" />
+                          </svg>
+                        )}
+                      </span>
+                      {/* Removable indicator (shows on hover for non-ticker columns) */}
+                      {isRemovable && (
+                        <span className="opacity-0 group-hover:opacity-40 transition-opacity ml-0.5">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                )
+              })}
               <th className="px-4 py-3 w-10" />
             </tr>
           </thead>
