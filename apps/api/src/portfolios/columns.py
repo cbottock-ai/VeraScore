@@ -1,10 +1,10 @@
 """
-Column Registry - Maps watchlist columns to their data sources.
+Column Registry - Maps watchlist columns to their FMP data sources.
 
 Each column defines:
 - id: Unique identifier
 - label: Display name
-- source: Data category (quote, profile, fundamentals, growth, momentum, holding, computed)
+- source: Data category (quote, profile, fundamentals, holding, computed)
 - field: Field path within the source data
 - format: Formatting hint (currency, percent, large_number, number, string)
 """
@@ -14,13 +14,11 @@ from enum import Enum
 
 
 class DataSource(str, Enum):
-    """Data source categories with different TTLs and fetch methods."""
+    """Data source categories - all from FMP except HOLDING and COMPUTED."""
     HOLDING = "holding"          # From database (user's position)
-    QUOTE = "quote"              # Real-time price data (5 min TTL)
-    PROFILE = "profile"          # Company info (daily TTL)
-    FUNDAMENTALS = "fundamentals"  # Financial metrics (daily TTL)
-    GROWTH = "growth"            # Historical CAGR rates (daily TTL)
-    MOMENTUM = "momentum"        # Price momentum (daily TTL)
+    QUOTE = "quote"              # FMP real-time quote (5 min TTL)
+    PROFILE = "profile"          # FMP company profile (daily TTL)
+    FUNDAMENTALS = "fundamentals"  # FMP ratios/metrics (daily TTL)
     COMPUTED = "computed"        # Calculated from other fields
 
 
@@ -61,11 +59,18 @@ _register(
     ColumnDef("purchase_date", "Purchase Date", DataSource.HOLDING, "purchase_date", FormatType.STRING),
 )
 
-# --- Quote (real-time, 5 min TTL) ---
+# --- Quote (FMP real-time, 5 min TTL) ---
 _register(
     ColumnDef("price", "Last Price", DataSource.QUOTE, "price", FormatType.CURRENCY),
     ColumnDef("day_change", "Day Change $", DataSource.QUOTE, "change", FormatType.CURRENCY),
     ColumnDef("day_change_pct", "Day Change %", DataSource.QUOTE, "change_percent", FormatType.PERCENT),
+    ColumnDef("volume", "Volume", DataSource.QUOTE, "volume", FormatType.LARGE_NUMBER),
+    ColumnDef("day_high", "Day High", DataSource.QUOTE, "day_high", FormatType.CURRENCY),
+    ColumnDef("day_low", "Day Low", DataSource.QUOTE, "day_low", FormatType.CURRENCY),
+    ColumnDef("year_high", "52W High", DataSource.QUOTE, "year_high", FormatType.CURRENCY),
+    ColumnDef("year_low", "52W Low", DataSource.QUOTE, "year_low", FormatType.CURRENCY),
+    ColumnDef("avg_50", "50D Avg", DataSource.QUOTE, "avg_50", FormatType.CURRENCY),
+    ColumnDef("avg_200", "200D Avg", DataSource.QUOTE, "avg_200", FormatType.CURRENCY),
 )
 
 # --- Computed from quote + holding ---
@@ -75,18 +80,19 @@ _register(
     ColumnDef("gain_loss_pct", "Gain/Loss %", DataSource.COMPUTED, "gain_loss_pct", FormatType.PERCENT),
 )
 
-# --- Profile (company info, daily TTL) ---
+# --- Profile (FMP company info, daily TTL) ---
 _register(
+    ColumnDef("name", "Company Name", DataSource.PROFILE, "name", FormatType.STRING),
     ColumnDef("sector", "Sector", DataSource.PROFILE, "sector", FormatType.STRING),
     ColumnDef("industry", "Industry", DataSource.PROFILE, "industry", FormatType.STRING),
     ColumnDef("market_cap", "Market Cap", DataSource.PROFILE, "market_cap", FormatType.LARGE_NUMBER),
     ColumnDef("beta", "Beta", DataSource.PROFILE, "beta", FormatType.NUMBER),
-    ColumnDef("week_52_high", "52W High", DataSource.PROFILE, "week_52_high", FormatType.CURRENCY),
-    ColumnDef("week_52_low", "52W Low", DataSource.PROFILE, "week_52_low", FormatType.CURRENCY),
     ColumnDef("avg_volume", "Avg Volume", DataSource.PROFILE, "avg_volume", FormatType.LARGE_NUMBER),
+    ColumnDef("exchange", "Exchange", DataSource.PROFILE, "exchange", FormatType.STRING),
+    ColumnDef("employees", "Employees", DataSource.PROFILE, "employees", FormatType.LARGE_NUMBER),
 )
 
-# --- Valuation metrics (from fundamentals) ---
+# --- Valuation metrics (FMP ratios/estimates) ---
 _register(
     ColumnDef("pe_ttm", "P/E (TTM)", DataSource.FUNDAMENTALS, "valuation.pe_ttm", FormatType.NUMBER),
     ColumnDef("pe_ntm", "P/E (NTM)", DataSource.FUNDAMENTALS, "valuation.pe_ntm", FormatType.NUMBER),
@@ -97,19 +103,21 @@ _register(
     ColumnDef("peg_ratio", "PEG Ratio", DataSource.FUNDAMENTALS, "valuation.peg_ratio", FormatType.NUMBER),
     ColumnDef("eps_ttm", "EPS (TTM)", DataSource.FUNDAMENTALS, "valuation.eps_ttm", FormatType.CURRENCY),
     ColumnDef("eps_ntm", "EPS (NTM)", DataSource.FUNDAMENTALS, "valuation.eps_ntm", FormatType.CURRENCY),
+    ColumnDef("price_to_fcf", "Price/FCF", DataSource.FUNDAMENTALS, "valuation.price_to_fcf", FormatType.NUMBER),
 )
 
-# --- Growth metrics ---
+# --- Growth metrics (FMP financial growth) ---
 _register(
     ColumnDef("revenue_growth_yoy", "Rev Growth YoY", DataSource.FUNDAMENTALS, "growth.revenue_growth_yoy", FormatType.PERCENT),
     ColumnDef("earnings_growth_yoy", "Earnings Growth YoY", DataSource.FUNDAMENTALS, "growth.earnings_growth_yoy", FormatType.PERCENT),
-    ColumnDef("revenue_growth_3y", "Rev CAGR 3Y", DataSource.GROWTH, "revenue_growth_3y", FormatType.PERCENT),
-    ColumnDef("earnings_growth_3y", "Earnings CAGR 3Y", DataSource.GROWTH, "earnings_growth_3y", FormatType.PERCENT),
-    ColumnDef("revenue_growth_5y", "Rev CAGR 5Y", DataSource.GROWTH, "revenue_growth_5y", FormatType.PERCENT),
-    ColumnDef("revenue_growth_10y", "Rev CAGR 10Y", DataSource.GROWTH, "revenue_growth_10y", FormatType.PERCENT),
+    ColumnDef("eps_growth_yoy", "EPS Growth YoY", DataSource.FUNDAMENTALS, "growth.eps_growth_yoy", FormatType.PERCENT),
+    ColumnDef("revenue_growth_3y", "Rev CAGR 3Y", DataSource.FUNDAMENTALS, "growth.revenue_growth_3y", FormatType.PERCENT),
+    ColumnDef("earnings_growth_3y", "Earnings CAGR 3Y", DataSource.FUNDAMENTALS, "growth.earnings_growth_3y", FormatType.PERCENT),
+    ColumnDef("revenue_growth_5y", "Rev CAGR 5Y", DataSource.FUNDAMENTALS, "growth.revenue_growth_5y", FormatType.PERCENT),
+    ColumnDef("revenue_growth_10y", "Rev CAGR 10Y", DataSource.FUNDAMENTALS, "growth.revenue_growth_10y", FormatType.PERCENT),
 )
 
-# --- Profitability metrics ---
+# --- Profitability metrics (FMP ratios) ---
 _register(
     ColumnDef("gross_margin", "Gross Margin", DataSource.FUNDAMENTALS, "profitability.gross_margin", FormatType.PERCENT),
     ColumnDef("ebitda_margin", "EBITDA Margin", DataSource.FUNDAMENTALS, "profitability.ebitda_margin", FormatType.PERCENT),
@@ -117,39 +125,33 @@ _register(
     ColumnDef("net_margin", "Net Margin", DataSource.FUNDAMENTALS, "profitability.net_margin", FormatType.PERCENT),
     ColumnDef("roe", "ROE", DataSource.FUNDAMENTALS, "profitability.roe", FormatType.PERCENT),
     ColumnDef("roa", "ROA", DataSource.FUNDAMENTALS, "profitability.roa", FormatType.PERCENT),
+    ColumnDef("roic", "ROIC", DataSource.FUNDAMENTALS, "profitability.roic", FormatType.PERCENT),
 )
 
-# --- Quality/Balance Sheet metrics ---
+# --- Quality/Balance Sheet metrics (FMP ratios) ---
 _register(
     ColumnDef("current_ratio", "Current Ratio", DataSource.FUNDAMENTALS, "quality.current_ratio", FormatType.NUMBER),
     ColumnDef("quick_ratio", "Quick Ratio", DataSource.FUNDAMENTALS, "quality.quick_ratio", FormatType.NUMBER),
     ColumnDef("debt_to_equity", "Debt/Equity", DataSource.FUNDAMENTALS, "quality.debt_to_equity", FormatType.NUMBER),
-    ColumnDef("total_debt", "Total Debt", DataSource.FUNDAMENTALS, "quality.total_debt", FormatType.LARGE_NUMBER),
-    ColumnDef("total_cash", "Total Cash", DataSource.FUNDAMENTALS, "quality.total_cash", FormatType.LARGE_NUMBER),
-    ColumnDef("fcf", "Free Cash Flow", DataSource.FUNDAMENTALS, "quality.free_cash_flow", FormatType.LARGE_NUMBER),
-    ColumnDef("ocf", "Operating CF", DataSource.FUNDAMENTALS, "quality.operating_cash_flow", FormatType.LARGE_NUMBER),
+    ColumnDef("interest_coverage", "Interest Coverage", DataSource.FUNDAMENTALS, "quality.interest_coverage", FormatType.NUMBER),
+    ColumnDef("fcf_per_share", "FCF/Share", DataSource.FUNDAMENTALS, "quality.fcf_per_share", FormatType.CURRENCY),
     ColumnDef("fcf_yield", "FCF Yield", DataSource.FUNDAMENTALS, "quality.fcf_yield", FormatType.PERCENT),
+    ColumnDef("earnings_yield", "Earnings Yield", DataSource.FUNDAMENTALS, "quality.earnings_yield", FormatType.PERCENT),
 )
 
-# --- Momentum ---
-_register(
-    ColumnDef("price_change_1m", "1M Return", DataSource.MOMENTUM, "price_change_1m", FormatType.PERCENT),
-    ColumnDef("price_change_3m", "3M Return", DataSource.MOMENTUM, "price_change_3m", FormatType.PERCENT),
-    ColumnDef("price_change_6m", "6M Return", DataSource.MOMENTUM, "price_change_6m", FormatType.PERCENT),
-    ColumnDef("price_change_1y", "1Y Return", DataSource.MOMENTUM, "price_change_1y", FormatType.PERCENT),
-)
-
-# --- Dividend ---
+# --- Dividend (FMP ratios) ---
 _register(
     ColumnDef("dividend_yield", "Div Yield", DataSource.FUNDAMENTALS, "dividend.dividend_yield", FormatType.PERCENT),
     ColumnDef("payout_ratio", "Payout Ratio", DataSource.FUNDAMENTALS, "dividend.payout_ratio", FormatType.PERCENT),
+    ColumnDef("dividend_per_share", "Div/Share", DataSource.FUNDAMENTALS, "dividend.dividend_per_share", FormatType.CURRENCY),
 )
 
-# --- Analyst ---
+# --- Analyst Estimates (FMP) ---
 _register(
-    ColumnDef("target_price", "Target Price", DataSource.FUNDAMENTALS, "analyst.target_mean", FormatType.CURRENCY),
-    ColumnDef("analyst_rating", "Analyst Rating", DataSource.FUNDAMENTALS, "analyst.rating", FormatType.STRING),
-    ColumnDef("num_analysts", "# Analysts", DataSource.FUNDAMENTALS, "analyst.num_analysts", FormatType.NUMBER),
+    ColumnDef("eps_estimate", "EPS Est", DataSource.FUNDAMENTALS, "analyst.eps_estimate", FormatType.CURRENCY),
+    ColumnDef("eps_estimate_high", "EPS Est High", DataSource.FUNDAMENTALS, "analyst.eps_estimate_high", FormatType.CURRENCY),
+    ColumnDef("eps_estimate_low", "EPS Est Low", DataSource.FUNDAMENTALS, "analyst.eps_estimate_low", FormatType.CURRENCY),
+    ColumnDef("num_analysts", "# Analysts", DataSource.FUNDAMENTALS, "analyst.num_analysts_eps", FormatType.NUMBER),
 )
 
 # --- VeraScore ---

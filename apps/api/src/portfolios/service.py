@@ -6,11 +6,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.core.data_providers.fetcher import (
-    fetch_fundamentals,
-    fetch_growth,
-    fetch_momentum,
-    fetch_stock_info,
+from src.core.data_providers.fmp_fetcher import (
+    fetch_fmp_all,
+    fetch_fmp_fundamentals,
+    fetch_fmp_profile,
+    fetch_fmp_quote,
 )
 from src.portfolios.columns import (
     COLUMN_REGISTRY,
@@ -211,26 +211,22 @@ def export_csv(portfolio_id: int, db: Session) -> str | None:
     return output.getvalue()
 
 
-# --- Enrichment (async) ---
+# --- Enrichment (async) - FMP Primary Source ---
 
 async def _fetch_ticker_data(
     ticker: str, sources: set[DataSource]
 ) -> dict[str, Any]:
-    """Fetch data for a ticker based on required sources."""
+    """Fetch data for a ticker from FMP based on required sources."""
     tasks = {}
 
-    # Always need quote for price
-    if DataSource.QUOTE in sources or DataSource.PROFILE in sources:
-        tasks["info"] = fetch_stock_info(ticker)
+    if DataSource.QUOTE in sources:
+        tasks["quote"] = fetch_fmp_quote(ticker)
+
+    if DataSource.PROFILE in sources:
+        tasks["profile"] = fetch_fmp_profile(ticker)
 
     if DataSource.FUNDAMENTALS in sources:
-        tasks["fundamentals"] = fetch_fundamentals(ticker)
-
-    if DataSource.GROWTH in sources:
-        tasks["growth"] = fetch_growth(ticker)
-
-    if DataSource.MOMENTUM in sources:
-        tasks["momentum"] = fetch_momentum(ticker)
+        tasks["fundamentals"] = fetch_fmp_fundamentals(ticker)
 
     if not tasks:
         return {}
@@ -267,13 +263,12 @@ def _build_holding_row(
     columns: list[str],
 ) -> dict[str, Any]:
     """Build a single holding's data row for the requested columns."""
-    info = data.get("info", {})
+    quote = data.get("quote", {})
+    profile = data.get("profile", {})
     fundamentals = data.get("fundamentals", {})
-    growth = data.get("growth", {})
-    momentum = data.get("momentum", {})
 
     # Pre-compute common values
-    price = info.get("price")
+    price = quote.get("price")
     current_value = price * holding.shares if price else None
     gain_loss = current_value - holding.cost_basis if current_value else None
     gain_loss_pct = (
@@ -289,12 +284,14 @@ def _build_holding_row(
 
     # Calculate score if needed
     score = None
-    if "score" in columns and fundamentals and info:
+    if "score" in columns and fundamentals:
         try:
+            # Build info dict for scoring engine
+            info = {**quote, **profile}
             score_result = calculate_composite_score(fundamentals, info)
             score = score_result.get("overall_score")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Score calculation failed for {holding.ticker}: {e}")
 
     # Build the row with all requested columns
     row: dict[str, Any] = {
@@ -314,15 +311,11 @@ def _build_holding_row(
         if source == DataSource.HOLDING:
             val = getattr(holding, field, None)
         elif source == DataSource.QUOTE:
-            val = info.get(field)
+            val = quote.get(field)
         elif source == DataSource.PROFILE:
-            val = info.get(field)
+            val = profile.get(field)
         elif source == DataSource.FUNDAMENTALS:
             val = _get_nested_value(fundamentals, field)
-        elif source == DataSource.GROWTH:
-            val = growth.get(field)
-        elif source == DataSource.MOMENTUM:
-            val = momentum.get(field)
         elif source == DataSource.COMPUTED:
             # Handle computed fields
             if col_id == "cost_per_share":
@@ -356,13 +349,13 @@ async def enrich_holdings_dynamic(
     holdings: list[Holding],
     columns: list[str],
 ) -> list[dict[str, Any]]:
-    """Fetch and enrich holdings based on requested columns only."""
+    """Fetch and enrich holdings based on requested columns using FMP data."""
     if not holdings:
         return []
 
     # Determine which data sources we need
     sources = get_required_sources(columns)
-    logger.info(f"Enriching {len(holdings)} holdings with sources: {sources}")
+    logger.info(f"Enriching {len(holdings)} holdings with FMP sources: {sources}")
 
     # Fetch data for all tickers in parallel
     tickers = [h.ticker for h in holdings]
@@ -379,29 +372,24 @@ async def enrich_holdings_dynamic(
 
 
 async def _fetch_holding_data(ticker: str) -> tuple[dict | None, dict | None]:
-    """Fetch stock info and fundamentals in parallel for a single ticker."""
+    """Fetch quote and fundamentals from FMP for a single ticker (legacy support)."""
     try:
-        info, fundamentals = await asyncio.gather(
-            fetch_stock_info(ticker),
-            fetch_fundamentals(ticker),
-            return_exceptions=True
-        )
-        # Handle exceptions returned by gather
-        if isinstance(info, Exception):
-            info = None
-        if isinstance(fundamentals, Exception):
-            fundamentals = None
+        fmp_data = await fetch_fmp_all(ticker)
+        # Merge quote and profile into "info" for backwards compatibility
+        info = {**fmp_data.get("quote", {}), **fmp_data.get("profile", {})}
+        fundamentals = fmp_data.get("fundamentals", {})
         return info, fundamentals
-    except Exception:
+    except Exception as e:
+        logger.warning(f"FMP fetch failed for {ticker}: {e}")
         return None, None
 
 
 async def enrich_holdings(holdings: list[Holding]) -> list[HoldingDetail]:
-    """Fetch current prices and enrich holdings with live data (parallel)."""
+    """Fetch current prices and enrich holdings with FMP data (parallel)."""
     if not holdings:
         return []
 
-    # Fetch all data in parallel
+    # Fetch all FMP data in parallel
     tickers = [h.ticker for h in holdings]
     fetch_tasks = [_fetch_holding_data(ticker) for ticker in tickers]
     all_data = await asyncio.gather(*fetch_tasks)
@@ -422,14 +410,16 @@ async def enrich_holdings(holdings: list[Holding]) -> list[HoldingDetail]:
             except Exception:
                 pass
 
-        # Extract fundamentals
+        # Extract fundamentals from FMP structure
         pe_ratio = None
         dividend_yield = None
+        eps = None
         if fundamentals:
             valuation = fundamentals.get("valuation", {})
-            pe_ratio = valuation.get("peRatioTTM") or valuation.get("pe_ratio")
+            pe_ratio = valuation.get("pe_ntm") or valuation.get("pe_ttm")
+            eps = valuation.get("eps_ttm")
             dividend = fundamentals.get("dividend", {})
-            dividend_yield = dividend.get("dividendYielTTM") or dividend.get("dividendYield")
+            dividend_yield = dividend.get("dividend_yield")
 
         results.append(HoldingDetail(
             id=h.id,
@@ -442,14 +432,14 @@ async def enrich_holdings(holdings: list[Holding]) -> list[HoldingDetail]:
             current_price=round(price, 2) if price else None,
             current_value=round(current_value, 2) if current_value else None,
             day_change=info.get("change") if info else None,
-            day_change_pct=info.get("changePercent") if info else None,
+            day_change_pct=info.get("change_percent") if info else None,
             gain_loss=round(gain_loss, 2) if gain_loss is not None else None,
             gain_loss_pct=round(gain_loss_pct, 2) if gain_loss_pct is not None else None,
             sector=info.get("sector") if info else None,
-            market_cap=info.get("marketCap") if info else None,
+            market_cap=info.get("market_cap") if info else None,
             pe_ratio=round(pe_ratio, 2) if pe_ratio else None,
             revenue_ttm=None,
-            eps=info.get("eps") if info else None,
+            eps=round(eps, 2) if eps else None,
             dividend_yield=round(dividend_yield, 2) if dividend_yield else None,
             score=score,
         ))
