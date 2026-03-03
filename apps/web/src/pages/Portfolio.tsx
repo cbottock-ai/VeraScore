@@ -42,12 +42,17 @@ function formatValue(value: unknown, format: ColumnDef['format']): string {
       return `${sign}${num.toFixed(2)}%`
     case 'large_number':
       if (isNaN(num)) return '—'
-      if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`
-      if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
-      if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+      if (Math.abs(num) >= 1e12) return `$${(num / 1e12).toFixed(2)}T`
+      if (Math.abs(num) >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+      if (Math.abs(num) >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+      if (Math.abs(num) >= 1e3) return `$${(num / 1e3).toFixed(2)}K`
       return `$${num.toLocaleString()}`
     case 'number':
       return isNaN(num) ? '—' : num.toFixed(2)
+    case 'ratio':
+      return isNaN(num) ? '—' : num.toFixed(2) + 'x'
+    case 'days':
+      return isNaN(num) ? '—' : num.toFixed(0) + 'd'
     case 'score':
       return isNaN(num) ? '—' : num.toFixed(0)
     default:

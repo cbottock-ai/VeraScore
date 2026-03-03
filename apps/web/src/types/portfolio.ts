@@ -82,7 +82,7 @@ export interface ColumnDef {
   id: string
   label: string
   source: string
-  format: 'string' | 'number' | 'currency' | 'percent' | 'large_number' | 'score'
+  format: 'string' | 'number' | 'currency' | 'percent' | 'large_number' | 'score' | 'days' | 'ratio'
   description: string
 }
 
