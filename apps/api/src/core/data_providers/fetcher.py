@@ -139,3 +139,44 @@ def _pct(data: dict | None, key: str) -> float | None:
         return round(float(val) * 100, 2)
     except (ValueError, TypeError):
         return None
+
+
+async def fetch_growth(ticker: str) -> dict:
+    """Fetch multi-year growth rates (3Y, 5Y, 10Y CAGR)."""
+    cache_key = f"growth:{ticker}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Try FMP first, fallback to yfinance
+    try:
+        fmp_data = await fmp_financial_growth(ticker)
+    except Exception:
+        fmp_data = None
+
+    if fmp_data:
+        result = {
+            "revenue_growth_3y": _pct(fmp_data, "threeYRevenueGrowthPerShare"),
+            "earnings_growth_3y": _pct(fmp_data, "threeYNetIncomeGrowthPerShare"),
+            "revenue_growth_5y": _pct(fmp_data, "fiveYRevenueGrowthPerShare"),
+            "revenue_growth_10y": _pct(fmp_data, "tenYRevenueGrowthPerShare"),
+        }
+    else:
+        # Fallback to yfinance
+        yf_growth = await yahoo_get_historical_growth(ticker)
+        result = yf_growth or {}
+
+    cache_set(cache_key, result, CACHE_TTL_FUNDAMENTALS)
+    return result
+
+
+async def fetch_momentum(ticker: str) -> dict:
+    """Fetch price momentum (1M, 3M, 6M, 1Y returns)."""
+    cache_key = f"momentum:{ticker}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = await yahoo_get_momentum(ticker)
+    cache_set(cache_key, result, CACHE_TTL_FUNDAMENTALS)
+    return result

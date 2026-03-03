@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listPortfolios,
-  getPortfolio,
+  getAvailableColumns,
+  getPortfolioDynamic,
   createPortfolio,
   deletePortfolio,
   addHolding,
@@ -11,37 +12,83 @@ import {
   exportCsv,
   refreshPortfolio,
 } from '@/services/api'
-import type { HoldingDetail } from '@/types/portfolio'
+import type { ColumnDef, PortfolioDynamicResponse } from '@/types/portfolio'
 
-// All available columns
-const ALL_COLUMNS = [
-  { id: 'ticker', label: 'Ticker', align: 'left' as const },
-  { id: 'score', label: 'VeraScore', align: 'center' as const },
-  { id: 'price', label: 'Last Price', align: 'right' as const },
-  { id: 'shares', label: 'Shares', align: 'right' as const },
-  { id: 'cost_per_share', label: 'Cost/Share', align: 'right' as const },
-  { id: 'day_change_pct', label: '% Change', align: 'right' as const },
-  { id: 'market_cap', label: 'Market Cap', align: 'right' as const },
-  { id: 'pe_ratio', label: 'NTM P/E', align: 'right' as const },
-  { id: 'fcf', label: 'NTM FCF', align: 'right' as const },
-  { id: 'value', label: 'Value', align: 'right' as const },
-  { id: 'gain_loss', label: 'Gain/Loss', align: 'right' as const },
-  { id: 'day_change', label: 'Day Change $', align: 'right' as const },
-  { id: 'sector', label: 'Sector', align: 'left' as const },
-  { id: 'dividend_yield', label: 'Div Yield', align: 'right' as const },
-  { id: 'eps', label: 'EPS', align: 'right' as const },
-] as const
+// Default columns to show
+const DEFAULT_COLUMNS = [
+  'ticker',
+  'score',
+  'price',
+  'shares',
+  'cost_per_share',
+  'day_change_pct',
+  'market_cap',
+  'pe_ntm',
+  'fcf',
+]
 
-// Default visible columns
-const DEFAULT_COLUMNS = ['ticker', 'score', 'price', 'shares', 'cost_per_share', 'day_change_pct', 'market_cap', 'pe_ratio', 'fcf']
+// Format value based on column format type
+function formatValue(value: unknown, format: ColumnDef['format']): string {
+  if (value === null || value === undefined) return '—'
 
-// Format large numbers (market cap, revenue)
-function formatLargeNumber(num: number | null): string {
-  if (num === null) return '—'
-  if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`
-  if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
-  if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
-  return `$${num.toLocaleString()}`
+  const num = typeof value === 'number' ? value : parseFloat(String(value))
+
+  switch (format) {
+    case 'currency':
+      return isNaN(num) ? '—' : `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    case 'percent':
+      if (isNaN(num)) return '—'
+      const sign = num >= 0 ? '+' : ''
+      return `${sign}${num.toFixed(2)}%`
+    case 'large_number':
+      if (isNaN(num)) return '—'
+      if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`
+      if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+      if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+      return `$${num.toLocaleString()}`
+    case 'number':
+      return isNaN(num) ? '—' : num.toFixed(2)
+    case 'score':
+      return isNaN(num) ? '—' : num.toFixed(0)
+    default:
+      return String(value)
+  }
+}
+
+// Get color class for values
+function getValueColor(value: unknown, format: ColumnDef['format'], columnId: string): string {
+  if (value === null || value === undefined) return ''
+
+  const num = typeof value === 'number' ? value : parseFloat(String(value))
+  if (isNaN(num)) return ''
+
+  // Score coloring
+  if (columnId === 'score') {
+    if (num >= 70) return 'text-green-500'
+    if (num >= 50) return 'text-yellow-500'
+    return 'text-red-500'
+  }
+
+  // Percent/change coloring
+  if (format === 'percent' || columnId.includes('change') || columnId.includes('gain_loss')) {
+    return num >= 0 ? 'text-green-500' : 'text-red-500'
+  }
+
+  return ''
+}
+
+// Get text alignment for format type
+function getAlignment(format: ColumnDef['format']): string {
+  switch (format) {
+    case 'currency':
+    case 'percent':
+    case 'number':
+    case 'large_number':
+    case 'score':
+      return 'text-right'
+    default:
+      return 'text-left'
+  }
 }
 
 export function PortfolioPage() {
@@ -166,9 +213,27 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
     localStorage.setItem('watchlist-columns', JSON.stringify(visibleColumns))
   }, [visibleColumns])
 
+  // Fetch available columns from API
+  const { data: availableColumnsData } = useQuery({
+    queryKey: ['portfolio-columns'],
+    queryFn: getAvailableColumns,
+    staleTime: Infinity, // Column definitions don't change
+  })
+
+  const allColumns = availableColumnsData ?? []
+  const columnMap = useMemo(() => {
+    const map: Record<string, ColumnDef> = {}
+    for (const col of allColumns) {
+      map[col.id] = col
+    }
+    return map
+  }, [allColumns])
+
+  // Fetch portfolio data with dynamic columns
   const { data: portfolio, isLoading } = useQuery({
-    queryKey: ['portfolio', watchlistId],
-    queryFn: () => getPortfolio(watchlistId),
+    queryKey: ['portfolio', watchlistId, visibleColumns],
+    queryFn: () => getPortfolioDynamic(watchlistId, visibleColumns),
+    enabled: visibleColumns.length > 0,
   })
 
   const addMutation = useMutation({
@@ -194,7 +259,7 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
   })
 
   const refreshMutation = useMutation({
-    mutationFn: () => refreshPortfolio(watchlistId),
+    mutationFn: () => refreshPortfolio(watchlistId, visibleColumns),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolio', watchlistId] }),
   })
 
@@ -261,8 +326,8 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
   }
 
   const holdings = portfolio.holdings
-  const columns = ALL_COLUMNS.filter(c => visibleColumns.includes(c.id))
-  const availableColumns = ALL_COLUMNS.filter(c => !visibleColumns.includes(c.id))
+  const columns = visibleColumns.map(id => columnMap[id]).filter(Boolean)
+  const hiddenColumns = allColumns.filter(c => !visibleColumns.includes(c.id))
 
   return (
     <div>
@@ -302,13 +367,14 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
           >
             + Add Column
           </button>
-          {showColumnPicker && availableColumns.length > 0 && (
-            <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg py-1 z-10 min-w-[150px]">
-              {availableColumns.map(col => (
+          {showColumnPicker && hiddenColumns.length > 0 && (
+            <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg py-1 z-10 min-w-[200px] max-h-[300px] overflow-y-auto">
+              {hiddenColumns.map(col => (
                 <button
                   key={col.id}
                   onClick={() => addColumn(col.id)}
                   className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted"
+                  title={col.description || col.id}
                 >
                   {col.label}
                 </button>
@@ -364,7 +430,7 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
         </div>
       )}
 
-      {/* Holdings table - always show headers */}
+      {/* Holdings table */}
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full text-sm">
           <thead>
@@ -373,9 +439,7 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
                 <th
                   key={col.id}
                   onContextMenu={(e) => handleContextMenu(e, col.id)}
-                  className={`px-4 py-3 font-medium cursor-default select-none ${
-                    col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
-                  } ${col.id !== 'ticker' ? 'hover:bg-muted/80' : ''}`}
+                  className={`px-4 py-3 font-medium cursor-default select-none ${getAlignment(col.format)} ${col.id !== 'ticker' ? 'hover:bg-muted/80' : ''}`}
                   title={col.id !== 'ticker' ? 'Right-click to remove' : ''}
                 >
                   {col.label}
@@ -394,13 +458,13 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
             ) : (
               holdings.map((h) => (
                 <HoldingRow
-                  key={h.id}
+                  key={h.id as number}
                   holding={h}
                   columns={columns}
-                  isConfirmingDelete={confirmDeleteId === h.id}
-                  onConfirmDelete={() => setConfirmDeleteId(h.id)}
+                  isConfirmingDelete={confirmDeleteId === (h.id as number)}
+                  onConfirmDelete={() => setConfirmDeleteId(h.id as number)}
                   onCancelDelete={() => setConfirmDeleteId(null)}
-                  onDelete={() => deleteMutation.mutate(h.id)}
+                  onDelete={() => deleteMutation.mutate(h.id as number)}
                 />
               ))
             )}
@@ -414,96 +478,40 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
 // --- Holding Row ---
 
 function HoldingRow({
-  holding: h,
+  holding,
   columns,
   isConfirmingDelete,
   onConfirmDelete,
   onCancelDelete,
   onDelete,
 }: {
-  holding: HoldingDetail
-  columns: typeof ALL_COLUMNS[number][]
+  holding: Record<string, unknown>
+  columns: ColumnDef[]
   isConfirmingDelete: boolean
   onConfirmDelete: () => void
   onCancelDelete: () => void
   onDelete: () => void
 }) {
-  const getScoreColor = (score: number | null) => {
-    if (score === null) return ''
-    if (score >= 70) return 'text-green-500'
-    if (score >= 50) return 'text-yellow-500'
-    return 'text-red-500'
-  }
-
-  const getCellValue = (columnId: string) => {
-    const dayPositive = (h.day_change ?? 0) >= 0
-    const dayColor = dayPositive ? 'text-green-500' : 'text-red-500'
-    const glPositive = (h.gain_loss ?? 0) >= 0
-    const glColor = h.gain_loss !== null ? (glPositive ? 'text-green-500' : 'text-red-500') : ''
-
-    switch (columnId) {
-      case 'ticker':
-        return <span className="font-semibold">{h.ticker}</span>
-      case 'score':
-        return <span className={`font-semibold ${getScoreColor(h.score)}`}>{h.score?.toFixed(0) ?? '—'}</span>
-      case 'price':
-        return <span className="font-mono">{h.current_price !== null ? `$${h.current_price.toFixed(2)}` : '—'}</span>
-      case 'shares':
-        return <span className="font-mono">{h.shares}</span>
-      case 'cost_per_share':
-        return <span className="font-mono">{h.cost_per_share !== null ? `$${h.cost_per_share.toFixed(2)}` : '—'}</span>
-      case 'day_change_pct':
-        return (
-          <span className={`font-mono ${dayColor}`}>
-            {h.day_change_pct !== null ? `${dayPositive ? '+' : ''}${h.day_change_pct.toFixed(2)}%` : '—'}
-          </span>
-        )
-      case 'day_change':
-        return (
-          <span className={`font-mono ${dayColor}`}>
-            {h.day_change !== null ? `${dayPositive ? '+' : ''}$${h.day_change.toFixed(2)}` : '—'}
-          </span>
-        )
-      case 'market_cap':
-        return <span className="font-mono text-muted-foreground">{formatLargeNumber(h.market_cap)}</span>
-      case 'pe_ratio':
-        return <span className="font-mono text-muted-foreground">{h.pe_ratio?.toFixed(1) ?? '—'}</span>
-      case 'fcf':
-        return <span className="font-mono text-muted-foreground">—</span> // TODO: Add FCF data
-      case 'value':
-        return <span className="font-mono">{h.current_value !== null ? `$${h.current_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}</span>
-      case 'gain_loss':
-        return (
-          <span className={`font-mono ${glColor}`}>
-            {h.gain_loss !== null ? (
-              <>
-                {glPositive ? '+' : ''}${Math.abs(h.gain_loss).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                <span className="text-xs ml-1">({glPositive ? '+' : ''}{h.gain_loss_pct?.toFixed(1) ?? '0.0'}%)</span>
-              </>
-            ) : '—'}
-          </span>
-        )
-      case 'sector':
-        return <span className="text-muted-foreground truncate max-w-[120px]">{h.sector || '—'}</span>
-      case 'dividend_yield':
-        return <span className="font-mono text-muted-foreground">{h.dividend_yield !== null ? `${h.dividend_yield.toFixed(2)}%` : '—'}</span>
-      case 'eps':
-        return <span className="font-mono text-muted-foreground">{h.eps !== null ? `$${h.eps.toFixed(2)}` : '—'}</span>
-      default:
-        return '—'
-    }
-  }
-
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/30">
-      {columns.map(col => (
-        <td
-          key={col.id}
-          className={`px-4 py-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''}`}
-        >
-          {getCellValue(col.id)}
-        </td>
-      ))}
+      {columns.map(col => {
+        const value = holding[col.id]
+        const formatted = formatValue(value, col.format)
+        const colorClass = getValueColor(value, col.format, col.id)
+
+        return (
+          <td
+            key={col.id}
+            className={`px-4 py-3 font-mono ${getAlignment(col.format)} ${colorClass}`}
+          >
+            {col.id === 'ticker' ? (
+              <span className="font-semibold font-sans">{formatted}</span>
+            ) : (
+              formatted
+            )}
+          </td>
+        )
+      })}
       <td className="px-4 py-3">
         {isConfirmingDelete ? (
           <div className="flex gap-1">

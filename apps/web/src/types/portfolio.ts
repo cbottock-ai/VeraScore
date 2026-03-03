@@ -76,3 +76,30 @@ export interface CsvImportResult {
   imported: number
   errors: string[]
 }
+
+// Dynamic column support
+export interface ColumnDef {
+  id: string
+  label: string
+  source: string
+  format: 'string' | 'number' | 'currency' | 'percent' | 'large_number' | 'score'
+  description: string
+}
+
+export interface PortfolioDynamicMetrics {
+  total_value: number
+  total_cost_basis: number
+  total_gain_loss: number
+  total_gain_loss_pct: number
+  holdings_count: number
+  weighted_score: number | null
+}
+
+export interface PortfolioDynamicResponse {
+  id: number
+  name: string
+  description: string | null
+  metrics: PortfolioDynamicMetrics
+  holdings: Record<string, unknown>[]  // Dynamic fields based on columns
+  columns: string[]
+}

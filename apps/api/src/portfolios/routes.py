@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from src.core.data_providers.cache import cache_clear_ticker
 from src.core.database import get_db
+from src.portfolios.columns import list_all_columns
 from src.portfolios.schemas import (
     CsvImportResult,
     HoldingCreate,
@@ -12,6 +15,7 @@ from src.portfolios.schemas import (
     HoldingUpdate,
     PortfolioCreate,
     PortfolioDetailResponse,
+    PortfolioDynamicResponse,
     PortfolioListResponse,
     PortfolioSummary,
     PortfolioUpdate,
@@ -23,6 +27,7 @@ from src.portfolios.service import (
     delete_holding,
     delete_portfolio,
     enrich_holdings,
+    enrich_holdings_dynamic,
     export_csv,
     get_portfolio,
     import_csv,
@@ -32,6 +37,14 @@ from src.portfolios.service import (
 )
 
 router = APIRouter(prefix="/portfolios", tags=["portfolios"])
+
+
+# --- Column Registry ---
+
+@router.get("/columns")
+async def get_columns():
+    """Get all available columns with their metadata."""
+    return {"columns": list_all_columns()}
 
 
 # --- Portfolio CRUD ---
@@ -46,12 +59,58 @@ async def create(data: PortfolioCreate, db: Session = Depends(get_db)):
     return create_portfolio(data, db)
 
 
-@router.get("/{portfolio_id}", response_model=PortfolioDetailResponse)
-async def detail(portfolio_id: int, db: Session = Depends(get_db)):
+@router.get("/{portfolio_id}")
+async def detail(
+    portfolio_id: int,
+    columns: Optional[str] = Query(None, description="Comma-separated column IDs"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get portfolio details with holdings data.
+
+    If `columns` is provided, uses dynamic enrichment to fetch only the data
+    needed for those columns. Otherwise, returns the legacy HoldingDetail format.
+    """
     portfolio = get_portfolio(portfolio_id, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
 
+    if columns:
+        # Dynamic column-based enrichment
+        column_list = [c.strip() for c in columns.split(",") if c.strip()]
+        holdings_data = await enrich_holdings_dynamic(portfolio.holdings, column_list)
+
+        # Calculate basic metrics from the holdings data
+        total_value = sum(h.get("current_value") or 0 for h in holdings_data)
+        total_cost = sum(h.get("cost_basis") or 0 for h in holdings_data)
+        total_gl = total_value - total_cost
+        total_gl_pct = (total_gl / total_cost * 100) if total_cost > 0 else 0
+
+        # Weighted score
+        weighted_score = None
+        scored = [(h.get("current_value") or 0, h.get("score")) for h in holdings_data if h.get("score") is not None]
+        if scored and total_value > 0:
+            weighted_score = round(
+                sum(val * score for val, score in scored) / sum(val for val, _ in scored), 1
+            )
+
+        return PortfolioDynamicResponse(
+            id=portfolio.id,
+            name=portfolio.name,
+            description=portfolio.description,
+            metrics={
+                "total_value": round(total_value, 2),
+                "total_cost_basis": round(total_cost, 2),
+                "total_gain_loss": round(total_gl, 2),
+                "total_gain_loss_pct": round(total_gl_pct, 2),
+                "holdings_count": len(holdings_data),
+                "weighted_score": weighted_score,
+            },
+            holdings=holdings_data,
+            columns=column_list,
+        )
+
+    # Legacy format (no columns specified)
     enriched = await enrich_holdings(portfolio.holdings)
     metrics = await calculate_portfolio_metrics(enriched)
 
@@ -64,8 +123,12 @@ async def detail(portfolio_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/{portfolio_id}/refresh", response_model=PortfolioDetailResponse)
-async def refresh(portfolio_id: int, db: Session = Depends(get_db)):
+@router.post("/{portfolio_id}/refresh")
+async def refresh(
+    portfolio_id: int,
+    columns: Optional[str] = Query(None, description="Comma-separated column IDs"),
+    db: Session = Depends(get_db),
+):
     """Clear cache and fetch fresh data for all holdings."""
     portfolio = get_portfolio(portfolio_id, db)
     if not portfolio:
@@ -75,7 +138,40 @@ async def refresh(portfolio_id: int, db: Session = Depends(get_db)):
     for holding in portfolio.holdings:
         cache_clear_ticker(holding.ticker)
 
-    # Fetch fresh data
+    if columns:
+        # Dynamic column-based refresh
+        column_list = [c.strip() for c in columns.split(",") if c.strip()]
+        holdings_data = await enrich_holdings_dynamic(portfolio.holdings, column_list)
+
+        total_value = sum(h.get("current_value") or 0 for h in holdings_data)
+        total_cost = sum(h.get("cost_basis") or 0 for h in holdings_data)
+        total_gl = total_value - total_cost
+        total_gl_pct = (total_gl / total_cost * 100) if total_cost > 0 else 0
+
+        weighted_score = None
+        scored = [(h.get("current_value") or 0, h.get("score")) for h in holdings_data if h.get("score") is not None]
+        if scored and total_value > 0:
+            weighted_score = round(
+                sum(val * score for val, score in scored) / sum(val for val, _ in scored), 1
+            )
+
+        return PortfolioDynamicResponse(
+            id=portfolio.id,
+            name=portfolio.name,
+            description=portfolio.description,
+            metrics={
+                "total_value": round(total_value, 2),
+                "total_cost_basis": round(total_cost, 2),
+                "total_gain_loss": round(total_gl, 2),
+                "total_gain_loss_pct": round(total_gl_pct, 2),
+                "holdings_count": len(holdings_data),
+                "weighted_score": weighted_score,
+            },
+            holdings=holdings_data,
+            columns=column_list,
+        )
+
+    # Legacy format
     enriched = await enrich_holdings(portfolio.holdings)
     metrics = await calculate_portfolio_metrics(enriched)
 

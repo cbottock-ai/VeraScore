@@ -3,12 +3,13 @@ import type { StockSearchResponse, StockDetail, FundamentalsResponse, StockScore
 import type { ConversationSummary, ConversationDetail, LLMProviderInfo } from '@/types/chat'
 import type {
   PortfolioListResponse,
-  PortfolioSummary,
   PortfolioDetailResponse,
+  PortfolioDynamicResponse,
   PortfolioCreate,
   HoldingDetail,
   HoldingCreate,
   CsvImportResult,
+  ColumnDef,
 } from '@/types/portfolio'
 
 const api = axios.create({
@@ -72,8 +73,23 @@ export async function listPortfolios(): Promise<PortfolioListResponse> {
   return data
 }
 
+export async function getAvailableColumns(): Promise<ColumnDef[]> {
+  const { data } = await api.get<{ columns: ColumnDef[] }>('/portfolios/columns')
+  return data.columns
+}
+
 export async function getPortfolio(id: number): Promise<PortfolioDetailResponse> {
   const { data } = await api.get<PortfolioDetailResponse>(`/portfolios/${id}`)
+  return data
+}
+
+export async function getPortfolioDynamic(
+  id: number,
+  columns: string[]
+): Promise<PortfolioDynamicResponse> {
+  const { data } = await api.get<PortfolioDynamicResponse>(`/portfolios/${id}`, {
+    params: { columns: columns.join(',') },
+  })
   return data
 }
 
@@ -107,8 +123,12 @@ export async function exportCsv(portfolioId: number): Promise<string> {
   return data
 }
 
-export async function refreshPortfolio(portfolioId: number): Promise<PortfolioDetailResponse> {
-  const { data } = await api.post<PortfolioDetailResponse>(`/portfolios/${portfolioId}/refresh`)
+export async function refreshPortfolio(
+  portfolioId: number,
+  columns?: string[]
+): Promise<PortfolioDetailResponse | PortfolioDynamicResponse> {
+  const params = columns ? { columns: columns.join(',') } : undefined
+  const { data } = await api.post(`/portfolios/${portfolioId}/refresh`, null, { params })
   return data
 }
 

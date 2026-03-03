@@ -94,3 +94,13 @@ class PortfolioDetailResponse(BaseModel):
 class CsvImportResult(BaseModel):
     imported: int
     errors: list[str]
+
+
+class PortfolioDynamicResponse(BaseModel):
+    """Portfolio response with dynamic columns."""
+    id: int
+    name: str
+    description: str | None = None
+    metrics: dict  # Simplified metrics
+    holdings: list[dict]  # Dynamic fields based on requested columns
+    columns: list[str]  # The columns that were requested

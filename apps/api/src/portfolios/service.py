@@ -6,7 +6,17 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.core.data_providers.fetcher import fetch_stock_info, fetch_fundamentals
+from src.core.data_providers.fetcher import (
+    fetch_fundamentals,
+    fetch_growth,
+    fetch_momentum,
+    fetch_stock_info,
+)
+from src.portfolios.columns import (
+    COLUMN_REGISTRY,
+    DataSource,
+    get_required_sources,
+)
 from src.portfolios.models import Holding, Portfolio
 from src.portfolios.schemas import (
     CsvImportResult,
@@ -202,6 +212,171 @@ def export_csv(portfolio_id: int, db: Session) -> str | None:
 
 
 # --- Enrichment (async) ---
+
+async def _fetch_ticker_data(
+    ticker: str, sources: set[DataSource]
+) -> dict[str, Any]:
+    """Fetch data for a ticker based on required sources."""
+    tasks = {}
+
+    # Always need quote for price
+    if DataSource.QUOTE in sources or DataSource.PROFILE in sources:
+        tasks["info"] = fetch_stock_info(ticker)
+
+    if DataSource.FUNDAMENTALS in sources:
+        tasks["fundamentals"] = fetch_fundamentals(ticker)
+
+    if DataSource.GROWTH in sources:
+        tasks["growth"] = fetch_growth(ticker)
+
+    if DataSource.MOMENTUM in sources:
+        tasks["momentum"] = fetch_momentum(ticker)
+
+    if not tasks:
+        return {}
+
+    # Fetch all needed data in parallel
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+    data = {}
+    for key, result in zip(tasks.keys(), results):
+        if isinstance(result, Exception):
+            logger.warning(f"Failed to fetch {key} for {ticker}: {result}")
+            data[key] = {}
+        else:
+            data[key] = result or {}
+
+    return data
+
+
+def _get_nested_value(data: dict, path: str) -> Any:
+    """Get a nested value from a dict using dot notation."""
+    parts = path.split(".")
+    val = data
+    for part in parts:
+        if isinstance(val, dict):
+            val = val.get(part)
+        else:
+            return None
+    return val
+
+
+def _build_holding_row(
+    holding: Holding,
+    data: dict[str, Any],
+    columns: list[str],
+) -> dict[str, Any]:
+    """Build a single holding's data row for the requested columns."""
+    info = data.get("info", {})
+    fundamentals = data.get("fundamentals", {})
+    growth = data.get("growth", {})
+    momentum = data.get("momentum", {})
+
+    # Pre-compute common values
+    price = info.get("price")
+    current_value = price * holding.shares if price else None
+    gain_loss = current_value - holding.cost_basis if current_value else None
+    gain_loss_pct = (
+        (gain_loss / holding.cost_basis * 100)
+        if gain_loss is not None and holding.cost_basis > 0
+        else None
+    )
+    cost_per_share = (
+        round(holding.cost_basis / holding.shares, 2)
+        if holding.shares > 0
+        else None
+    )
+
+    # Calculate score if needed
+    score = None
+    if "score" in columns and fundamentals and info:
+        try:
+            score_result = calculate_composite_score(fundamentals, info)
+            score = score_result.get("overall_score")
+        except Exception:
+            pass
+
+    # Build the row with all requested columns
+    row: dict[str, Any] = {
+        "id": holding.id,
+        "ticker": holding.ticker,
+    }
+
+    for col_id in columns:
+        col_def = COLUMN_REGISTRY.get(col_id)
+        if not col_def:
+            continue
+
+        val = None
+        source = col_def.source
+        field = col_def.field
+
+        if source == DataSource.HOLDING:
+            val = getattr(holding, field, None)
+        elif source == DataSource.QUOTE:
+            val = info.get(field)
+        elif source == DataSource.PROFILE:
+            val = info.get(field)
+        elif source == DataSource.FUNDAMENTALS:
+            val = _get_nested_value(fundamentals, field)
+        elif source == DataSource.GROWTH:
+            val = growth.get(field)
+        elif source == DataSource.MOMENTUM:
+            val = momentum.get(field)
+        elif source == DataSource.COMPUTED:
+            # Handle computed fields
+            if col_id == "cost_per_share":
+                val = cost_per_share
+            elif col_id == "value":
+                val = round(current_value, 2) if current_value else None
+            elif col_id == "gain_loss":
+                val = round(gain_loss, 2) if gain_loss is not None else None
+            elif col_id == "gain_loss_pct":
+                val = round(gain_loss_pct, 2) if gain_loss_pct is not None else None
+            elif col_id == "score":
+                val = score
+
+        # Round numeric values
+        if isinstance(val, float) and col_id not in ("shares",):
+            val = round(val, 2)
+
+        row[col_id] = val
+
+    # Always include these core fields for the frontend
+    row["shares"] = holding.shares
+    row["cost_basis"] = holding.cost_basis
+    if price:
+        row["price"] = round(price, 2)
+        row["current_value"] = round(current_value, 2) if current_value else None
+
+    return row
+
+
+async def enrich_holdings_dynamic(
+    holdings: list[Holding],
+    columns: list[str],
+) -> list[dict[str, Any]]:
+    """Fetch and enrich holdings based on requested columns only."""
+    if not holdings:
+        return []
+
+    # Determine which data sources we need
+    sources = get_required_sources(columns)
+    logger.info(f"Enriching {len(holdings)} holdings with sources: {sources}")
+
+    # Fetch data for all tickers in parallel
+    tickers = [h.ticker for h in holdings]
+    tasks = [_fetch_ticker_data(ticker, sources) for ticker in tickers]
+    all_data = await asyncio.gather(*tasks)
+
+    # Build rows
+    results = []
+    for holding, data in zip(holdings, all_data):
+        row = _build_holding_row(holding, data, columns)
+        results.append(row)
+
+    return results
+
 
 async def _fetch_holding_data(ticker: str) -> tuple[dict | None, dict | None]:
     """Fetch stock info and fundamentals in parallel for a single ticker."""
