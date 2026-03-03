@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   listPortfolios,
@@ -366,28 +366,12 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
         >
           {showAddStock ? 'Cancel' : '+ Add Stock'}
         </button>
-        <div className="relative">
-          <button
-            onClick={() => setShowColumnPicker(!showColumnPicker)}
-            className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
-          >
-            + Add Column
-          </button>
-          {showColumnPicker && hiddenColumns.length > 0 && (
-            <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg py-1 z-10 min-w-[200px] max-h-[300px] overflow-y-auto">
-              {hiddenColumns.map(col => (
-                <button
-                  key={col.id}
-                  onClick={() => addColumn(col.id)}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted"
-                  title={col.description || col.id}
-                >
-                  {col.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <ColumnPicker
+          columns={hiddenColumns}
+          onSelect={addColumn}
+          isOpen={showColumnPicker}
+          onToggle={() => setShowColumnPicker(!showColumnPicker)}
+        />
         <button
           onClick={() => refreshMutation.mutate()}
           disabled={refreshMutation.isPending}
@@ -609,6 +593,207 @@ function AddStockForm({
           Add
         </button>
       </form>
+    </div>
+  )
+}
+
+// --- Column Picker ---
+
+// Category order for display
+const CATEGORY_ORDER = [
+  'Position',
+  'Price',
+  'Company',
+  'Valuation',
+  'Per Share',
+  'Profitability',
+  'Growth (YoY)',
+  'Growth (3Y CAGR)',
+  'Growth (5Y CAGR)',
+  'Growth (10Y CAGR)',
+  'Liquidity',
+  'Leverage',
+  'Efficiency',
+  'Cash Flow',
+  'Dividend',
+  'Other',
+  'Analyst',
+]
+
+function ColumnPicker({
+  columns,
+  onSelect,
+  isOpen,
+  onToggle,
+}: {
+  columns: ColumnDef[]
+  onSelect: (columnId: string) => void
+  isOpen: boolean
+  onToggle: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
+
+  // Focus search input when opened
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 0)
+    } else {
+      setSearch('')
+      setExpandedCategory(null)
+    }
+  }, [isOpen])
+
+  // Close on click outside
+  useEffect(() => {
+    if (!isOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        onToggle()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen, onToggle])
+
+  // Filter columns by search (context search: matches label, id, category, description)
+  const filteredColumns = useMemo(() => {
+    if (!search.trim()) return columns
+    const query = search.toLowerCase()
+    return columns.filter(col =>
+      col.label.toLowerCase().includes(query) ||
+      col.id.toLowerCase().includes(query) ||
+      col.category.toLowerCase().includes(query) ||
+      (col.description && col.description.toLowerCase().includes(query))
+    )
+  }, [columns, search])
+
+  // Group by category
+  const groupedColumns = useMemo(() => {
+    const groups: Record<string, ColumnDef[]> = {}
+    for (const col of filteredColumns) {
+      const cat = col.category || 'Other'
+      if (!groups[cat]) groups[cat] = []
+      groups[cat].push(col)
+    }
+    return groups
+  }, [filteredColumns])
+
+  // Sort categories by predefined order
+  const sortedCategories = useMemo(() => {
+    return Object.keys(groupedColumns).sort((a, b) => {
+      const aIdx = CATEGORY_ORDER.indexOf(a)
+      const bIdx = CATEGORY_ORDER.indexOf(b)
+      if (aIdx === -1 && bIdx === -1) return a.localeCompare(b)
+      if (aIdx === -1) return 1
+      if (bIdx === -1) return -1
+      return aIdx - bIdx
+    })
+  }, [groupedColumns])
+
+  const handleSelect = (columnId: string) => {
+    onSelect(columnId)
+    setSearch('')
+    setExpandedCategory(null)
+  }
+
+  const isSearching = search.trim().length > 0
+
+  return (
+    <div className="relative" ref={pickerRef}>
+      <button
+        onClick={onToggle}
+        className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
+      >
+        + Add Column
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-10 w-72">
+          {/* Search input */}
+          <div className="p-2 border-b border-border">
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search columns..."
+              className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+
+          {/* Column list */}
+          <div className="max-h-[400px] overflow-y-auto">
+            {filteredColumns.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                No columns match "{search}"
+              </div>
+            ) : isSearching ? (
+              // Flat list when searching
+              <div className="py-1">
+                {filteredColumns.map(col => (
+                  <button
+                    key={col.id}
+                    onClick={() => handleSelect(col.id)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex flex-col"
+                  >
+                    <span>{col.label}</span>
+                    <span className="text-xs text-muted-foreground">{col.category}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              // Categorized accordion when not searching
+              <div className="py-1">
+                {sortedCategories.map(category => {
+                  const cols = groupedColumns[category]
+                  const isExpanded = expandedCategory === category
+
+                  return (
+                    <div key={category}>
+                      <button
+                        onClick={() => setExpandedCategory(isExpanded ? null : category)}
+                        className="w-full text-left px-3 py-2 text-sm font-medium hover:bg-muted flex items-center justify-between"
+                      >
+                        <span>{category}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{cols.length}</span>
+                          <svg
+                            className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </span>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="bg-muted/30">
+                          {cols.map(col => (
+                            <button
+                              key={col.id}
+                              onClick={() => handleSelect(col.id)}
+                              className="w-full text-left px-6 py-1.5 text-sm hover:bg-muted"
+                              title={col.description || col.id}
+                            >
+                              {col.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
