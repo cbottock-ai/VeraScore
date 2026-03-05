@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     chunk_size: int = 512
     chunk_overlap: int = 50
 
+    # Clerk authentication
+    clerk_secret_key: str = ""
+    clerk_publishable_key: str = ""
+
     model_config = {"env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
 
 

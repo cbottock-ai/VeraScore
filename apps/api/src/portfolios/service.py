@@ -36,8 +36,11 @@ logger = logging.getLogger(__name__)
 
 # --- Portfolio CRUD ---
 
-def list_portfolios(db: Session) -> list[PortfolioSummary]:
-    portfolios = db.query(Portfolio).all()
+def list_portfolios(db: Session, user_id: int | None = None) -> list[PortfolioSummary]:
+    query = db.query(Portfolio)
+    if user_id is not None:
+        query = query.filter(Portfolio.user_id == user_id)
+    portfolios = query.all()
     return [
         PortfolioSummary(
             id=p.id,
@@ -49,8 +52,8 @@ def list_portfolios(db: Session) -> list[PortfolioSummary]:
     ]
 
 
-def create_portfolio(data: PortfolioCreate, db: Session) -> PortfolioSummary:
-    portfolio = Portfolio(name=data.name, description=data.description)
+def create_portfolio(data: PortfolioCreate, db: Session, user_id: int | None = None) -> PortfolioSummary:
+    portfolio = Portfolio(name=data.name, description=data.description, user_id=user_id)
     db.add(portfolio)
     db.commit()
     db.refresh(portfolio)

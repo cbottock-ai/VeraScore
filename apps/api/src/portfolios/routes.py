@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
+from src.auth import User, get_optional_user
 from src.core.data_providers.cache import cache_clear_ticker
 from src.core.database import get_db
 from src.portfolios.columns import list_all_columns
@@ -50,13 +51,22 @@ async def get_columns():
 # --- Portfolio CRUD ---
 
 @router.get("", response_model=PortfolioListResponse)
-async def list_all(db: Session = Depends(get_db)):
-    return PortfolioListResponse(portfolios=list_portfolios(db))
+async def list_all(
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
+    user_id = user.id if user else None
+    return PortfolioListResponse(portfolios=list_portfolios(db, user_id=user_id))
 
 
 @router.post("", response_model=PortfolioSummary, status_code=201)
-async def create(data: PortfolioCreate, db: Session = Depends(get_db)):
-    return create_portfolio(data, db)
+async def create(
+    data: PortfolioCreate,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
+    user_id = user.id if user else None
+    return create_portfolio(data, db, user_id=user_id)
 
 
 @router.get("/{portfolio_id}")

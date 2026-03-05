@@ -8,6 +8,7 @@ from src.core.config import settings
 from src.core.database import Base, engine
 
 # Import models to ensure tables are created
+from src.auth import models as auth_models  # noqa: F401
 from src.earnings import models as earnings_models  # noqa: F401
 from src.earnings.ir_sources import CompanyIRSource  # noqa: F401
 from src.portfolios.routes import router as portfolios_router

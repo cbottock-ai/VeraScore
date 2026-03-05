@@ -16,6 +16,24 @@ const api = axios.create({
   baseURL: '/api',
 })
 
+// Auth token management for Clerk integration
+let getAuthToken: (() => Promise<string | null>) | null = null
+
+export function setAuthTokenGetter(getter: () => Promise<string | null>) {
+  getAuthToken = getter
+}
+
+// Add auth header to all requests when token is available
+api.interceptors.request.use(async (config) => {
+  if (getAuthToken) {
+    const token = await getAuthToken()
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+  }
+  return config
+})
+
 // --- Stocks ---
 
 export async function searchStocks(query: string, limit = 10): Promise<StockSearchResponse> {
@@ -158,9 +176,18 @@ export async function sendMessage(
   content: string,
   onChunk: (text: string) => void,
 ): Promise<void> {
+  // Build headers with auth token if available
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (getAuthToken) {
+    const token = await getAuthToken()
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+  }
+
   const response = await fetch(`/api/chat/conversations/${conversationId}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ content }),
   })
 

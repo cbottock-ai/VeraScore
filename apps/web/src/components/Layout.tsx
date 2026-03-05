@@ -1,5 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { UserButton } from '@clerk/react'
 import { StockSearch } from '@/components/StockSearch'
+
+const CLERK_ENABLED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 const navItems = [
   {
@@ -95,10 +98,20 @@ export function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="h-14 border-b border-sidebar-border flex items-center px-6 bg-sidebar text-sidebar-foreground">
-          <div className="ml-auto">
+        <header className="h-14 border-b border-sidebar-border flex items-center px-6 bg-sidebar text-sidebar-foreground gap-4">
+          <div className="flex-1">
             <StockSearch />
           </div>
+          {CLERK_ENABLED && (
+            <UserButton
+              afterSignOutUrl="/"
+              appearance={{
+                elements: {
+                  avatarBox: 'w-8 h-8',
+                },
+              }}
+            />
+          )}
         </header>
 
         {/* Page content */}
