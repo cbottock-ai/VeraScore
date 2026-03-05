@@ -4,9 +4,10 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.orm import Session
 
-from src.chat.llm import get_provider
+from src.chat.llm import get_provider, get_provider_info
 from src.chat.models import Conversation, Message
 from src.chat.schemas import ConversationDetail, ConversationSummary, MessageResponse
+from src.chat.tracing import trace_context
 
 logger = logging.getLogger(__name__)
 
@@ -103,25 +104,37 @@ async def send_message(
     # Load history
     history = _get_message_history(db, conversation_id)
 
-    # Get LLM provider and stream
+    # Get LLM provider info for tracing
+    provider_info = get_provider_info()
     provider = get_provider()
     full_response = ""
 
-    try:
-        async for chunk in provider.stream_response(history, db):
-            full_response += chunk
-            # SSE format — JSON-encode to preserve newlines
-            yield f"data: {json.dumps(chunk)}\n\n"
+    # Create trace context for this request
+    with trace_context(
+        conversation_id=conversation_id,
+        user_id=conv.user_id,
+        provider=provider_info["provider"],
+        model=provider_info["model"],
+    ) as trace:
+        try:
+            async for chunk in provider.stream_response(history, db):
+                full_response += chunk
+                # SSE format — JSON-encode to preserve newlines
+                yield f"data: {json.dumps(chunk)}\n\n"
 
-        # Save assistant response
-        if full_response:
-            _save_message(db, conversation_id, "assistant", full_response)
+            # Save assistant response
+            if full_response:
+                _save_message(db, conversation_id, "assistant", full_response)
 
-        yield "data: [DONE]\n\n"
+            yield "data: [DONE]\n\n"
 
-    except Exception as e:
-        logger.exception("Error streaming LLM response")
-        error_msg = f"Sorry, I encountered an error: {e}"
-        _save_message(db, conversation_id, "assistant", error_msg)
-        yield f"data: {error_msg}\n\n"
-        yield "data: [DONE]\n\n"
+        except Exception as e:
+            logger.exception("Error streaming LLM response")
+            trace.set_error(str(e))
+            error_msg = f"Sorry, I encountered an error: {e}"
+            _save_message(db, conversation_id, "assistant", error_msg)
+            yield f"data: {error_msg}\n\n"
+            yield "data: [DONE]\n\n"
+
+        # Save trace to database
+        trace.save(db)

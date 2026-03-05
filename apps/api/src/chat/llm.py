@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from src.chat.tools import execute_tool, get_anthropic_tools, get_openai_tools
+from src.chat.tracing import get_current_trace, log_tokens, log_tool_call
 from src.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,13 @@ class AnthropicProvider(LLMProvider):
 
                 final_message = stream.get_final_message()
 
+            # Log token usage
+            if final_message.usage:
+                log_tokens(
+                    input_tokens=final_message.usage.input_tokens,
+                    output_tokens=final_message.usage.output_tokens,
+                )
+
             # Check if we need to handle tool calls
             tool_uses = [c for c in collected_content if c["type"] == "tool_use"]
             if not tool_uses:
@@ -111,6 +119,7 @@ class AnthropicProvider(LLMProvider):
             tool_results = []
             for tool_use in tool_uses:
                 logger.info(f"Executing tool: {tool_use['name']}({tool_use['input']})")
+                log_tool_call(tool_use["name"])
                 result = await execute_tool(tool_use["name"], tool_use["input"], db)
                 tool_results.append(
                     {
@@ -145,15 +154,21 @@ class OpenAIProvider(LLMProvider):
         for _ in range(max_iterations):
             collected_text = ""
             tool_calls_data: dict[int, dict] = {}
+            usage_data = None
 
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=openai_messages,
                 tools=self.tools,
                 stream=True,
+                stream_options={"include_usage": True},
             )
 
             async for chunk in stream:
+                # Capture usage from the final chunk
+                if chunk.usage:
+                    usage_data = chunk.usage
+
                 delta = chunk.choices[0].delta if chunk.choices else None
                 if not delta:
                     continue
@@ -178,6 +193,13 @@ class OpenAIProvider(LLMProvider):
                                 tool_calls_data[idx]["name"] = tc.function.name
                             if tc.function.arguments:
                                 tool_calls_data[idx]["arguments"] += tc.function.arguments
+
+            # Log token usage
+            if usage_data:
+                log_tokens(
+                    input_tokens=usage_data.prompt_tokens,
+                    output_tokens=usage_data.completion_tokens,
+                )
 
             # No tool calls — we're done
             if not tool_calls_data:
@@ -208,6 +230,7 @@ class OpenAIProvider(LLMProvider):
                 name = tc_info["function"]["name"]
                 args = json.loads(tc_info["function"]["arguments"])
                 logger.info(f"Executing tool: {name}({args})")
+                log_tool_call(name)
                 result = await execute_tool(name, args, db)
                 openai_messages.append(
                     {

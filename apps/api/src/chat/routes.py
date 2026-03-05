@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from src.auth import User, get_optional_user
 from src.chat.llm import get_provider_info, set_runtime_provider
 from src.chat.schemas import (
     ConversationCreate,
@@ -18,6 +19,7 @@ from src.chat.service import (
     list_conversations,
     send_message,
 )
+from src.chat.tracing import get_traces, get_usage_summary
 from src.core.database import get_db
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -73,3 +75,54 @@ async def get_provider():
 async def update_provider(data: ProviderUpdate):
     set_runtime_provider(data.provider, data.model)
     return LLMProviderInfo(**get_provider_info())
+
+
+# --- AI Tracing ---
+
+
+@router.get("/traces")
+async def list_traces(
+    conversation_id: int | None = Query(None),
+    limit: int = Query(100, le=500),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
+    """
+    Get AI trace history.
+
+    Returns token usage, costs, latency, and tool calls for debugging/auditing.
+    """
+    user_id = user.id if user else None
+    traces = get_traces(db, user_id=user_id, conversation_id=conversation_id, limit=limit)
+    return [
+        {
+            "id": t.id,
+            "conversation_id": t.conversation_id,
+            "provider": t.provider,
+            "model": t.model,
+            "input_tokens": t.input_tokens,
+            "output_tokens": t.output_tokens,
+            "total_tokens": t.total_tokens,
+            "estimated_cost_usd": t.estimated_cost,
+            "latency_ms": t.latency_ms,
+            "tool_calls": t.tool_names.split(",") if t.tool_names else [],
+            "error": t.error,
+            "created_at": t.created_at.isoformat(),
+        }
+        for t in traces
+    ]
+
+
+@router.get("/traces/summary")
+async def trace_summary(
+    days: int = Query(30, le=365),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
+    """
+    Get usage summary for cost monitoring.
+
+    Returns total tokens, costs, and average latency over the specified period.
+    """
+    user_id = user.id if user else None
+    return get_usage_summary(db, user_id=user_id, days=days)
