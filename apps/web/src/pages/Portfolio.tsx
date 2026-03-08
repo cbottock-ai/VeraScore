@@ -12,7 +12,7 @@ import {
   exportCsv,
   refreshPortfolio,
 } from '@/services/api'
-import type { ColumnDef, PortfolioDynamicResponse } from '@/types/portfolio'
+import type { ColumnDef } from '@/types/portfolio'
 
 // Default columns to show
 const DEFAULT_COLUMNS = [
@@ -346,19 +346,9 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
     return () => document.removeEventListener('click', handleClick)
   }, [])
 
-  if (isLoading) {
-    return <div className="h-64 rounded-xl bg-card animate-pulse" />
-  }
-
-  if (!portfolio) {
-    return <p className="text-muted-foreground">Watchlist not found.</p>
-  }
-
-  const columns = visibleColumns.map(id => columnMap[id]).filter(Boolean)
-  const hiddenColumns = allColumns.filter(c => !visibleColumns.includes(c.id))
-
-  // Sort holdings
+  // Sort holdings - must be before early returns to maintain hooks order
   const holdings = useMemo(() => {
+    if (!portfolio?.holdings) return []
     if (!sortColumn || !sortDirection) return portfolio.holdings
 
     return [...portfolio.holdings].sort((a, b) => {
@@ -383,7 +373,18 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
       const cmp = aStr.localeCompare(bStr)
       return sortDirection === 'asc' ? cmp : -cmp
     })
-  }, [portfolio.holdings, sortColumn, sortDirection])
+  }, [portfolio?.holdings, sortColumn, sortDirection])
+
+  const columns = visibleColumns.map(id => columnMap[id]).filter(Boolean)
+  const hiddenColumns = allColumns.filter(c => !visibleColumns.includes(c.id))
+
+  if (isLoading) {
+    return <div className="h-64 rounded-xl bg-card animate-pulse" />
+  }
+
+  if (!portfolio) {
+    return <p className="text-muted-foreground">Watchlist not found.</p>
+  }
 
   return (
     <div>

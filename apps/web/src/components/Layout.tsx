@@ -1,8 +1,11 @@
+import { lazy, Suspense } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { UserButton } from '@clerk/react'
 import { StockSearch } from '@/components/StockSearch'
 
 const CLERK_ENABLED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+// Lazy load Clerk components to avoid importing when not configured
+const ClerkUserButton = lazy(() => import('@/components/ClerkUserButton').then(m => ({ default: m.ClerkUserButton })))
 
 const navItems = [
   {
@@ -103,14 +106,9 @@ export function Layout() {
             <StockSearch />
           </div>
           {CLERK_ENABLED && (
-            <UserButton
-              afterSignOutUrl="/"
-              appearance={{
-                elements: {
-                  avatarBox: 'w-8 h-8',
-                },
-              }}
-            />
+            <Suspense fallback={<div className="w-8 h-8 rounded-full bg-muted animate-pulse" />}>
+              <ClerkUserButton />
+            </Suspense>
           )}
         </header>
 

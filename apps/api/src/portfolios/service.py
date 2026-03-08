@@ -4,6 +4,7 @@ import io
 import logging
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.core.data_providers.fmp_fetcher import (
@@ -39,7 +40,8 @@ logger = logging.getLogger(__name__)
 def list_portfolios(db: Session, user_id: int | None = None) -> list[PortfolioSummary]:
     query = db.query(Portfolio)
     if user_id is not None:
-        query = query.filter(Portfolio.user_id == user_id)
+        # Include user's portfolios AND orphaned ones (user_id is NULL)
+        query = query.filter(or_(Portfolio.user_id == user_id, Portfolio.user_id.is_(None)))
     portfolios = query.all()
     return [
         PortfolioSummary(

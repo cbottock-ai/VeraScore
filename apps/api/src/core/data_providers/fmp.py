@@ -1,10 +1,17 @@
+import asyncio
 import logging
+import time
+from typing import Any
 
 import httpx
 
 from src.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory cache for quotes (30 second TTL)
+_quote_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+QUOTE_CACHE_TTL = 30  # seconds
 
 FMP_BASE = "https://financialmodelingprep.com/stable"
 
@@ -207,26 +214,52 @@ async def fmp_quote(symbol: str) -> dict | None:
 
 
 async def fmp_batch_quote(symbols: list[str]) -> list[dict]:
-    """Get real-time quotes for multiple symbols."""
+    """Get real-time quotes for multiple symbols with caching and parallel fetching."""
     if not settings.fmp_api_key:
         return []
 
-    # FMP stable API doesn't support batch, so fetch individually
+    now = time.time()
     results = []
-    async with httpx.AsyncClient() as client:
-        for symbol in symbols:
-            try:
-                resp = await client.get(
-                    f"{FMP_BASE}/quote",
-                    params={"symbol": symbol, "apikey": settings.fmp_api_key},
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                if isinstance(data, list) and data:
-                    results.append(data[0])
-                elif isinstance(data, dict) and data:
-                    results.append(data)
-            except Exception:
+    symbols_to_fetch = []
+
+    # Check cache first
+    for symbol in symbols:
+        cache_key = symbol.upper()
+        if cache_key in _quote_cache:
+            cached_time, cached_data = _quote_cache[cache_key]
+            if now - cached_time < QUOTE_CACHE_TTL:
+                results.append(cached_data)
                 continue
+        symbols_to_fetch.append(symbol)
+
+    if not symbols_to_fetch:
+        return results
+
+    # Fetch missing quotes in parallel
+    async def fetch_one(client: httpx.AsyncClient, symbol: str) -> dict | None:
+        try:
+            resp = await client.get(
+                f"{FMP_BASE}/quote",
+                params={"symbol": symbol, "apikey": settings.fmp_api_key},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list) and data:
+                return data[0]
+            elif isinstance(data, dict) and data:
+                return data
+        except Exception:
+            pass
+        return None
+
+    async with httpx.AsyncClient() as client:
+        fetched = await asyncio.gather(*[fetch_one(client, s) for s in symbols_to_fetch])
+
+    # Cache and collect results
+    for symbol, data in zip(symbols_to_fetch, fetched):
+        if data:
+            _quote_cache[symbol.upper()] = (now, data)
+            results.append(data)
+
     return results

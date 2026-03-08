@@ -45,6 +45,8 @@ def _get_jwks_client() -> PyJWKClient:
                 encoded_part += "=" * padding
             try:
                 frontend_api = base64.b64decode(encoded_part).decode("utf-8")
+                # Strip trailing $ which is a Clerk encoding marker
+                frontend_api = frontend_api.rstrip("$")
                 jwks_url = f"https://{frontend_api}/.well-known/jwks.json"
             except Exception:
                 # Fallback to standard Clerk JWKS URL pattern

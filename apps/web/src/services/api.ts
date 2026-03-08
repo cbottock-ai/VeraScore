@@ -5,6 +5,7 @@ import type {
   PortfolioListResponse,
   PortfolioDetailResponse,
   PortfolioDynamicResponse,
+  PortfolioSummary,
   PortfolioCreate,
   HoldingDetail,
   HoldingCreate,
