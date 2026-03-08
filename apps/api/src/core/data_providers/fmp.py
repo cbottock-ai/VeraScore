@@ -263,3 +263,148 @@ async def fmp_batch_quote(symbols: list[str]) -> list[dict]:
             results.append(data)
 
     return results
+
+
+# --- Earnings APIs ---
+
+
+async def fmp_earnings_calendar(
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> list[dict]:
+    """
+    Get upcoming earnings announcements.
+
+    Args:
+        from_date: Start date (YYYY-MM-DD), defaults to today
+        to_date: End date (YYYY-MM-DD), defaults to 7 days from now
+    """
+    if not settings.fmp_api_key:
+        return []
+
+    params: dict[str, Any] = {"apikey": settings.fmp_api_key}
+    if from_date:
+        params["from"] = from_date
+    if to_date:
+        params["to"] = to_date
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earning-calendar",
+            params=params,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def fmp_earnings_historical(ticker: str, limit: int = 20) -> list[dict]:
+    """
+    Get historical earnings data for a stock.
+
+    Returns EPS estimates, actuals, surprises, and revenue data.
+    """
+    if not settings.fmp_api_key:
+        return []
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earnings-surprises",
+            params={"symbol": ticker, "apikey": settings.fmp_api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data[:limit] if isinstance(data, list) else []
+
+
+async def fmp_earnings_confirmed(
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> list[dict]:
+    """Get confirmed upcoming earnings dates."""
+    if not settings.fmp_api_key:
+        return []
+
+    params: dict[str, Any] = {"apikey": settings.fmp_api_key}
+    if from_date:
+        params["from"] = from_date
+    if to_date:
+        params["to"] = to_date
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earning-calendar-confirmed",
+            params=params,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def fmp_transcript(ticker: str, year: int, quarter: int) -> dict | None:
+    """
+    Get earnings call transcript for a specific quarter.
+
+    Args:
+        ticker: Stock ticker
+        year: Fiscal year
+        quarter: Fiscal quarter (1-4)
+
+    Returns:
+        Transcript data or None if not found
+    """
+    if not settings.fmp_api_key:
+        return None
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earning-call-transcript",
+            params={
+                "symbol": ticker,
+                "year": year,
+                "quarter": quarter,
+                "apikey": settings.fmp_api_key,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        if isinstance(data, list) and data:
+            return data[0]
+        return data if isinstance(data, dict) else None
+
+
+async def fmp_transcript_list(ticker: str) -> list[dict]:
+    """Get list of available transcripts for a stock."""
+    if not settings.fmp_api_key:
+        return []
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/earning-call-transcript-list",
+            params={"symbol": ticker, "apikey": settings.fmp_api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def fmp_analyst_estimates(ticker: str, limit: int = 10) -> list[dict]:
+    """Get analyst estimates for a stock."""
+    if not settings.fmp_api_key:
+        return []
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/analyst-estimates",
+            params={
+                "symbol": ticker,
+                "limit": limit,
+                "apikey": settings.fmp_api_key,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()

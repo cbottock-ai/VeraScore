@@ -1,21 +1,27 @@
+"""
+Abstract base class for embedding providers.
+
+Allows swapping between OpenAI, Cohere, local models, etc.
+"""
+
 from abc import ABC, abstractmethod
 
 
 class EmbeddingProvider(ABC):
-    """Abstract base class for embedding providers."""
+    """Abstract embedding provider interface."""
 
     @property
     @abstractmethod
     def dimension(self) -> int:
-        """Return the dimension of the embedding vectors."""
-        pass
+        """Return the embedding dimension."""
+        ...
 
     @abstractmethod
     async def embed_text(self, text: str) -> list[float]:
-        """Embed a single text string."""
-        pass
+        """Generate embedding for a single text."""
+        ...
 
     @abstractmethod
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple text strings in a batch."""
-        pass
+        """Generate embeddings for multiple texts efficiently."""
+        ...

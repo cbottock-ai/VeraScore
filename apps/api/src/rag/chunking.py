@@ -1,3 +1,9 @@
+"""
+Text chunking utilities for RAG.
+
+Handles splitting transcripts into chunks with speaker/section metadata.
+"""
+
 import re
 from dataclasses import dataclass
 
@@ -5,7 +11,7 @@ from src.core.config import settings
 
 
 @dataclass
-class TextChunk:
+class Chunk:
     """A chunk of text with metadata."""
 
     content: str
@@ -18,15 +24,23 @@ def chunk_text(
     text: str,
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
-) -> list[TextChunk]:
-    """Split text into overlapping chunks."""
+) -> list[Chunk]:
+    """
+    Split text into overlapping chunks.
+
+    Args:
+        text: The text to chunk
+        chunk_size: Max characters per chunk (default from settings)
+        chunk_overlap: Overlap between chunks (default from settings)
+
+    Returns:
+        List of Chunk objects
+    """
     chunk_size = chunk_size or settings.chunk_size
     chunk_overlap = chunk_overlap or settings.chunk_overlap
 
-    # Clean the text
-    text = text.strip()
-    if not text:
-        return []
+    if len(text) <= chunk_size:
+        return [Chunk(content=text.strip(), index=0)]
 
     chunks = []
     start = 0
@@ -35,117 +49,107 @@ def chunk_text(
     while start < len(text):
         end = start + chunk_size
 
-        # Try to find a good break point (sentence end, paragraph)
+        # Try to break at sentence boundary
         if end < len(text):
-            # Look for sentence boundaries
-            for sep in [". ", ".\n", "\n\n", "\n", " "]:
-                break_point = text.rfind(sep, start, end)
-                if break_point > start:
-                    end = break_point + len(sep)
-                    break
+            # Look for sentence end within last 20% of chunk
+            search_start = start + int(chunk_size * 0.8)
+            sentence_end = text.rfind(". ", search_start, end)
+            if sentence_end > search_start:
+                end = sentence_end + 1
 
-        chunk_text_content = text[start:end].strip()
-        if chunk_text_content:
-            chunks.append(TextChunk(content=chunk_text_content, index=index))
+        chunk_text = text[start:end].strip()
+        if chunk_text:
+            chunks.append(Chunk(content=chunk_text, index=index))
             index += 1
 
-        # Move start with overlap
-        start = end - chunk_overlap if end < len(text) else end
+        start = end - chunk_overlap
 
     return chunks
 
 
-def parse_transcript_sections(transcript_text: str) -> list[TextChunk]:
-    """Parse transcript into chunks with speaker and section metadata."""
-    chunks = []
-    current_section = "prepared_remarks"
-    chunk_index = 0
+def chunk_transcript(text: str) -> list[Chunk]:
+    """
+    Chunk an earnings transcript with speaker/section awareness.
 
-    # Common patterns for Q&A section starts
+    Attempts to parse common transcript formats and extract:
+    - Speaker names (CEO, CFO, Analyst names)
+    - Sections (prepared_remarks, q_and_a)
+    """
+    chunks = []
+    index = 0
+
+    # Common patterns for section headers
     qa_patterns = [
-        r"question[s]?\s*(?:and|&)\s*answer",
-        r"Q\s*&\s*A",
-        r"Q&A Session",
-        r"Operator.*question",
+        r"question.?and.?answer",
+        r"q\s*&\s*a\s+session",
+        r"operator:.*questions",
     ]
     qa_regex = re.compile("|".join(qa_patterns), re.IGNORECASE)
 
-    # Speaker patterns - match "Name:" or "Name --" at start of line
+    # Split into sections
+    current_section = "prepared_remarks"
+    current_speaker = None
+
+    # Common speaker pattern: "Name - Title:" or "Name:"
     speaker_pattern = re.compile(
-        r"^([A-Z][A-Za-z\s\.\,]+(?:CEO|CFO|COO|CTO|President|Analyst|VP|Director)?[^:]*?)(?::|--)",
+        r"^([A-Z][a-zA-Z\s\.\-]+?)(?:\s*[-–—]\s*[A-Za-z\s,]+)?:\s*",
         re.MULTILINE,
     )
 
-    # Split by paragraphs first
-    paragraphs = re.split(r"\n\s*\n+", transcript_text)
+    lines = text.split("\n")
+    current_text = []
 
-    current_speaker = None
-    current_content = []
-
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
+    for line in lines:
+        line = line.strip()
+        if not line:
             continue
 
-        # Check if entering Q&A section
-        if qa_regex.search(para):
-            current_section = "q_and_a"
-
-        # Check for speaker change
-        speaker_match = speaker_pattern.match(para)
-        if speaker_match:
-            # Save previous content
-            if current_content:
-                text_content = " ".join(current_content)
-                for chunk in chunk_text(text_content):
+        # Check for Q&A section start
+        if qa_regex.search(line):
+            # Flush current chunk
+            if current_text:
+                content = " ".join(current_text)
+                for chunk in chunk_text(content):
                     chunk.speaker = current_speaker
                     chunk.section = current_section
-                    chunk.index = chunk_index
+                    chunk.index = index
                     chunks.append(chunk)
-                    chunk_index += 1
-                current_content = []
+                    index += 1
+                current_text = []
 
-            current_speaker = _normalize_speaker(speaker_match.group(1).strip())
-            # Get content after speaker name
-            remaining = para[speaker_match.end() :].strip()
+            current_section = "q_and_a"
+            continue
+
+        # Check for speaker change
+        speaker_match = speaker_pattern.match(line)
+        if speaker_match:
+            # Flush current chunk
+            if current_text:
+                content = " ".join(current_text)
+                for chunk in chunk_text(content):
+                    chunk.speaker = current_speaker
+                    chunk.section = current_section
+                    chunk.index = index
+                    chunks.append(chunk)
+                    index += 1
+                current_text = []
+
+            current_speaker = speaker_match.group(1).strip()
+            # Get text after speaker name
+            remaining = line[speaker_match.end():].strip()
             if remaining:
-                current_content.append(remaining)
+                current_text.append(remaining)
         else:
-            current_content.append(para)
+            current_text.append(line)
 
-    # Don't forget the last chunk
-    if current_content:
-        text_content = " ".join(current_content)
-        for chunk in chunk_text(text_content):
+    # Flush final chunk
+    if current_text:
+        content = " ".join(current_text)
+        for chunk in chunk_text(content):
             chunk.speaker = current_speaker
             chunk.section = current_section
-            chunk.index = chunk_index
+            chunk.index = index
             chunks.append(chunk)
-            chunk_index += 1
+            index += 1
 
     return chunks
-
-
-def _normalize_speaker(speaker: str) -> str:
-    """Normalize speaker name/role."""
-    speaker = speaker.strip()
-
-    # Common role keywords
-    role_keywords = {
-        "CEO": "CEO",
-        "Chief Executive": "CEO",
-        "CFO": "CFO",
-        "Chief Financial": "CFO",
-        "COO": "COO",
-        "CTO": "CTO",
-        "President": "President",
-        "Analyst": "Analyst",
-        "Operator": "Operator",
-    }
-
-    for keyword, role in role_keywords.items():
-        if keyword.lower() in speaker.lower():
-            return role
-
-    # Return cleaned name
-    return speaker[:100] if len(speaker) > 100 else speaker

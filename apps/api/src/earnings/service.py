@@ -1,181 +1,163 @@
-import logging
-from datetime import datetime, timedelta
+"""
+Earnings data service.
 
-from sqlalchemy import and_, desc
+Handles fetching, caching, and querying earnings data.
+"""
+
+from datetime import date, datetime, timedelta
+
 from sqlalchemy.orm import Session
 
 from src.core.data_providers.fmp import (
+    fmp_analyst_estimates,
     fmp_earnings_calendar,
     fmp_earnings_historical,
     fmp_transcript,
+    fmp_transcript_list,
 )
-from src.earnings.models import Earnings, Transcript
-from src.earnings.schemas import (
-    EarningsHistoryResponse,
-    EarningsRecord,
-    EarningsSurpriseAnalysis,
-    UpcomingEarnings,
-    UpcomingEarningsResponse,
-)
+from src.earnings.models import Earnings, Transcript, TranscriptChunk
+from src.rag.chunking import chunk_transcript
 
-logger = logging.getLogger(__name__)
 
-# Cache duration in hours
-EARNINGS_CACHE_HOURS = 24
+async def get_earnings_calendar(
+    db: Session,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    tickers: list[str] | None = None,
+) -> list[dict]:
+    """
+    Get upcoming earnings announcements.
+
+    Args:
+        from_date: Start date, defaults to today
+        to_date: End date, defaults to 14 days from now
+        tickers: Optional filter to specific tickers
+    """
+    from_date = from_date or date.today()
+    to_date = to_date or (date.today() + timedelta(days=14))
+
+    data = await fmp_earnings_calendar(
+        from_date=from_date.isoformat(),
+        to_date=to_date.isoformat(),
+    )
+
+    if tickers:
+        tickers_upper = {t.upper() for t in tickers}
+        data = [d for d in data if d.get("symbol", "").upper() in tickers_upper]
+
+    return data
 
 
 async def get_earnings_history(
-    ticker: str, db: Session, limit: int = 12
-) -> EarningsHistoryResponse:
-    """Get historical earnings for a ticker, fetching from API if needed.
+    db: Session,
+    ticker: str,
+    limit: int = 12,
+) -> list[dict]:
+    """
+    Get historical earnings for a stock.
 
-    Uses earnings-calendar endpoint which provides both estimates and actuals,
-    allowing for proper surprise calculations.
+    Returns cached data if available, otherwise fetches and caches.
     """
     ticker = ticker.upper()
 
-    # Check cache
-    cutoff = datetime.utcnow() - timedelta(hours=EARNINGS_CACHE_HOURS)
+    # Check cache first
     cached = (
         db.query(Earnings)
-        .filter(and_(Earnings.ticker == ticker, Earnings.fetched_at > cutoff))
-        .order_by(desc(Earnings.fiscal_date))
+        .filter(Earnings.ticker == ticker)
+        .order_by(Earnings.fiscal_date.desc())
         .limit(limit)
         .all()
     )
 
-    if cached and len(cached) >= limit:
-        records = [
-            EarningsRecord(
-                ticker=e.ticker,
-                fiscal_date=e.fiscal_date,
-                fiscal_quarter=e.fiscal_quarter,
-                fiscal_year=e.fiscal_year,
-                eps_estimated=e.eps_estimated,
-                eps_actual=e.eps_actual,
-                eps_surprise=e.eps_surprise,
-                eps_surprise_pct=e.eps_surprise_pct,
-                revenue_estimated=e.revenue_estimated,
-                revenue_actual=e.revenue_actual,
-                revenue_surprise_pct=e.revenue_surprise_pct,
-                report_time=e.report_time,
-            )
+    if cached:
+        return [
+            {
+                "ticker": e.ticker,
+                "fiscal_date": e.fiscal_date.isoformat(),
+                "fiscal_quarter": e.fiscal_quarter,
+                "fiscal_year": e.fiscal_year,
+                "eps_estimated": e.eps_estimated,
+                "eps_actual": e.eps_actual,
+                "eps_surprise": e.eps_surprise,
+                "eps_surprise_pct": e.eps_surprise_pct,
+                "revenue_estimated": e.revenue_estimated,
+                "revenue_actual": e.revenue_actual,
+                "revenue_surprise_pct": e.revenue_surprise_pct,
+                "report_time": e.report_time,
+            }
             for e in cached
         ]
-        return EarningsHistoryResponse(ticker=ticker, records=records)
 
-    # Fetch from API (earnings-calendar endpoint with historical range)
-    api_data = await fmp_earnings_historical(ticker, limit)
+    # Fetch from FMP
+    data = await fmp_earnings_historical(ticker, limit=limit)
 
-    records = []
-    for item in api_data:
-        fiscal_date = item.get("date", "")
+    # Cache in database
+    for item in data:
+        fiscal_date_str = item.get("date") or item.get("fiscalDateEnding")
+        if not fiscal_date_str:
+            continue
 
-        # Parse quarter and year from date
         try:
-            dt = datetime.strptime(fiscal_date, "%Y-%m-%d")
-            fiscal_quarter = (dt.month - 1) // 3 + 1
-            fiscal_year = dt.year
+            fiscal_date = datetime.strptime(fiscal_date_str, "%Y-%m-%d").date()
         except ValueError:
-            fiscal_quarter = 0
-            fiscal_year = 0
+            continue
 
-        # Get estimates and actuals directly from earnings-calendar
-        eps_estimated = item.get("epsEstimated")
-        eps_actual = item.get("epsActual")
-        revenue_estimated = item.get("revenueEstimated")
-        revenue_actual = item.get("revenueActual")
+        # Determine quarter from date
+        quarter = (fiscal_date.month - 1) // 3 + 1
 
-        # Calculate surprises
-        eps_surprise = None
-        eps_surprise_pct = None
-        if eps_estimated is not None and eps_actual is not None:
-            eps_surprise = eps_actual - eps_estimated
-            if eps_estimated != 0:
-                eps_surprise_pct = (eps_surprise / abs(eps_estimated)) * 100
-
-        revenue_surprise_pct = None
-        if revenue_estimated and revenue_actual and revenue_estimated != 0:
-            revenue_surprise_pct = (
-                (revenue_actual - revenue_estimated) / revenue_estimated
-            ) * 100
-
-        # Save to DB
         earnings = Earnings(
             ticker=ticker,
             fiscal_date=fiscal_date,
-            fiscal_quarter=fiscal_quarter,
-            fiscal_year=fiscal_year,
-            eps_estimated=eps_estimated,
-            eps_actual=eps_actual,
-            eps_surprise=eps_surprise,
-            eps_surprise_pct=eps_surprise_pct,
-            revenue_estimated=revenue_estimated,
-            revenue_actual=revenue_actual,
-            revenue_surprise_pct=revenue_surprise_pct,
+            fiscal_quarter=quarter,
+            fiscal_year=fiscal_date.year,
+            eps_estimated=item.get("estimatedEPS") or item.get("epsEstimated"),
+            eps_actual=item.get("actualEPS") or item.get("actualEarningResult"),
+            eps_surprise=item.get("epsSurprise"),
+            eps_surprise_pct=item.get("surprisePercentage"),
+            revenue_estimated=item.get("revenueEstimated"),
+            revenue_actual=item.get("revenue"),
+            report_time=item.get("time"),
         )
         db.add(earnings)
 
-        records.append(
-            EarningsRecord(
-                ticker=ticker,
-                fiscal_date=fiscal_date,
-                fiscal_quarter=fiscal_quarter,
-                fiscal_year=fiscal_year,
-                eps_estimated=eps_estimated,
-                eps_actual=eps_actual,
-                eps_surprise=eps_surprise,
-                eps_surprise_pct=eps_surprise_pct,
-                revenue_estimated=revenue_estimated,
-                revenue_actual=revenue_actual,
-                revenue_surprise_pct=revenue_surprise_pct,
-            )
-        )
-
     db.commit()
-    return EarningsHistoryResponse(ticker=ticker, records=records)
 
-
-async def get_upcoming_earnings(db: Session, days: int = 7) -> UpcomingEarningsResponse:
-    """Get upcoming earnings for the next N days."""
-    today = datetime.utcnow().date()
-    end_date = today + timedelta(days=days)
-
-    api_data = await fmp_earnings_calendar(
-        today.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
-    )
-
-    earnings = []
-    for item in api_data:
-        earnings.append(
-            UpcomingEarnings(
-                ticker=item.get("symbol", ""),
-                company_name=item.get("name"),
-                fiscal_date=item.get("date", ""),
-                eps_estimated=item.get("epsEstimated"),
-                revenue_estimated=item.get("revenueEstimated"),
-                report_time=item.get("time"),
-            )
-        )
-
-    return UpcomingEarningsResponse(days=days, earnings=earnings)
+    # Return the fetched data formatted
+    return [
+        {
+            "ticker": ticker,
+            "fiscal_date": item.get("date") or item.get("fiscalDateEnding"),
+            "eps_estimated": item.get("estimatedEPS") or item.get("epsEstimated"),
+            "eps_actual": item.get("actualEPS") or item.get("actualEarningResult"),
+            "eps_surprise": item.get("epsSurprise"),
+            "eps_surprise_pct": item.get("surprisePercentage"),
+            "revenue_estimated": item.get("revenueEstimated"),
+            "revenue_actual": item.get("revenue"),
+        }
+        for item in data
+    ]
 
 
 async def get_transcript(
-    ticker: str, year: int, quarter: int, db: Session
+    db: Session,
+    ticker: str,
+    year: int,
+    quarter: int,
 ) -> Transcript | None:
-    """Get transcript, fetching from API if not cached."""
+    """
+    Get or fetch an earnings transcript.
+
+    Returns cached transcript if available, otherwise fetches and caches.
+    """
     ticker = ticker.upper()
 
     # Check cache
     cached = (
         db.query(Transcript)
         .filter(
-            and_(
-                Transcript.ticker == ticker,
-                Transcript.fiscal_year == year,
-                Transcript.fiscal_quarter == quarter,
-            )
+            Transcript.ticker == ticker,
+            Transcript.fiscal_year == year,
+            Transcript.fiscal_quarter == quarter,
         )
         .first()
     )
@@ -183,105 +165,205 @@ async def get_transcript(
     if cached:
         return cached
 
-    # Fetch from API
-    api_data = await fmp_transcript(ticker, year, quarter)
-    if not api_data:
+    # Fetch from FMP
+    data = await fmp_transcript(ticker, year, quarter)
+    if not data or not data.get("content"):
         return None
 
+    # Parse date
+    call_date_str = data.get("date", "")
+    try:
+        call_date = datetime.strptime(call_date_str[:10], "%Y-%m-%d").date()
+    except (ValueError, IndexError):
+        call_date = date(year, quarter * 3, 1)
+
+    # Create transcript
     transcript = Transcript(
         ticker=ticker,
-        fiscal_quarter=quarter,
         fiscal_year=year,
-        call_date=api_data.get("date"),
-        full_text=api_data.get("content"),
-        source="fmp",
+        fiscal_quarter=quarter,
+        call_date=call_date,
+        full_text=data.get("content", ""),
     )
     db.add(transcript)
+    db.flush()  # Get the ID
+
+    # Chunk the transcript
+    chunks = chunk_transcript(transcript.full_text)
+    for chunk in chunks:
+        db_chunk = TranscriptChunk(
+            transcript_id=transcript.id,
+            chunk_index=chunk.index,
+            content=chunk.content,
+            speaker=chunk.speaker,
+            section=chunk.section,
+        )
+        db.add(db_chunk)
+
     db.commit()
     db.refresh(transcript)
 
     return transcript
 
 
+async def get_analyst_estimates(ticker: str) -> list[dict]:
+    """Get analyst estimates for upcoming quarters."""
+    return await fmp_analyst_estimates(ticker)
+
+
+async def list_available_transcripts(ticker: str) -> list[dict]:
+    """Get list of available transcripts for a stock."""
+    return await fmp_transcript_list(ticker)
+
+
+def analyze_earnings_pattern(earnings: list[dict]) -> dict:
+    """
+    Analyze earnings beat/miss patterns.
+
+    Returns summary statistics about earnings performance.
+    """
+    if not earnings:
+        return {"error": "No earnings data"}
+
+    beats = 0
+    misses = 0
+    total_surprise_pct = 0
+    revenue_beats = 0
+    revenue_misses = 0
+
+    for e in earnings:
+        eps_surprise = e.get("eps_surprise_pct") or e.get("eps_surprise")
+        if eps_surprise is not None:
+            if eps_surprise > 0:
+                beats += 1
+            elif eps_surprise < 0:
+                misses += 1
+            total_surprise_pct += eps_surprise
+
+        rev_surprise = e.get("revenue_surprise_pct")
+        if rev_surprise is not None:
+            if rev_surprise > 0:
+                revenue_beats += 1
+            elif rev_surprise < 0:
+                revenue_misses += 1
+
+    total = len(earnings)
+    eps_total = beats + misses
+
+    return {
+        "total_quarters": total,
+        "eps_beats": beats,
+        "eps_misses": misses,
+        "eps_beat_rate": round(beats / eps_total * 100, 1) if eps_total > 0 else None,
+        "avg_eps_surprise_pct": round(total_surprise_pct / eps_total, 2) if eps_total > 0 else None,
+        "revenue_beats": revenue_beats,
+        "revenue_misses": revenue_misses,
+        "revenue_beat_rate": round(revenue_beats / (revenue_beats + revenue_misses) * 100, 1)
+        if (revenue_beats + revenue_misses) > 0
+        else None,
+    }
+
+
+# --- Functions for chat tools (match expected signatures) ---
+
+from src.earnings.schemas import (
+    EarningsAnalysis,
+    EarningsCalendarResponse,
+    EarningsHistoryResponse,
+    UpcomingEarning,
+)
+
+
+async def get_earnings_history_for_tool(
+    ticker: str,
+    db: Session,
+    limit: int = 12,
+) -> EarningsHistoryResponse:
+    """Get earnings history formatted for chat tool response."""
+    ticker = ticker.upper()
+    earnings = await get_earnings_history(db, ticker, limit)
+    analysis = analyze_earnings_pattern(earnings)
+
+    return EarningsHistoryResponse(
+        ticker=ticker,
+        earnings=earnings,
+        analysis=analysis if "error" not in analysis else None,
+    )
+
+
+# Alias for tools.py import
+get_earnings_history = get_earnings_history_for_tool
+
+
+async def get_upcoming_earnings(
+    db: Session,
+    days: int = 7,
+) -> EarningsCalendarResponse:
+    """Get upcoming earnings formatted for chat tool response."""
+    from_date = date.today()
+    to_date = from_date + timedelta(days=days)
+
+    data = await get_earnings_calendar(db, from_date, to_date)
+
+    earnings = [
+        UpcomingEarning(
+            symbol=e.get("symbol", ""),
+            name=e.get("name"),
+            date=e.get("date", ""),
+            time=e.get("time"),
+            eps_estimated=e.get("epsEstimated"),
+            revenue_estimated=e.get("revenueEstimated"),
+        )
+        for e in data
+    ]
+
+    return EarningsCalendarResponse(
+        from_date=from_date.isoformat(),
+        to_date=to_date.isoformat(),
+        earnings=earnings,
+    )
+
+
 def analyze_earnings_surprises(
-    ticker: str, db: Session, limit: int = 12
-) -> EarningsSurpriseAnalysis | None:
-    """Analyze earnings surprise patterns."""
+    ticker: str,
+    db: Session,
+    quarters: int = 12,
+) -> EarningsAnalysis | None:
+    """Analyze earnings surprises for chat tool response."""
     ticker = ticker.upper()
 
-    earnings = (
+    # Get cached earnings
+    cached = (
         db.query(Earnings)
         .filter(Earnings.ticker == ticker)
-        .order_by(desc(Earnings.fiscal_date))
-        .limit(limit)
+        .order_by(Earnings.fiscal_date.desc())
+        .limit(quarters)
         .all()
     )
 
-    if not earnings:
+    if not cached:
         return None
 
-    eps_beat = 0
-    eps_miss = 0
-    eps_meet = 0
-    eps_surprises = []
+    earnings_dicts = [
+        {
+            "eps_surprise_pct": e.eps_surprise_pct,
+            "revenue_surprise_pct": e.revenue_surprise_pct,
+        }
+        for e in cached
+    ]
 
-    revenue_beat = 0
-    revenue_miss = 0
-    revenue_surprises = []
+    analysis = analyze_earnings_pattern(earnings_dicts)
+    if "error" in analysis:
+        return None
 
-    for e in earnings:
-        if e.eps_surprise_pct is not None:
-            eps_surprises.append(e.eps_surprise_pct)
-            if e.eps_surprise_pct > 1:
-                eps_beat += 1
-            elif e.eps_surprise_pct < -1:
-                eps_miss += 1
-            else:
-                eps_meet += 1
-
-        if e.revenue_surprise_pct is not None:
-            revenue_surprises.append(e.revenue_surprise_pct)
-            if e.revenue_surprise_pct > 0:
-                revenue_beat += 1
-            else:
-                revenue_miss += 1
-
-    total = len(earnings)
-    eps_beat_rate = eps_beat / total if total > 0 else 0
-    revenue_beat_rate = revenue_beat / total if total > 0 else 0
-
-    avg_eps_surprise = sum(eps_surprises) / len(eps_surprises) if eps_surprises else 0
-    avg_rev_surprise = (
-        sum(revenue_surprises) / len(revenue_surprises) if revenue_surprises else 0
-    )
-
-    # Determine trend by comparing recent vs older
-    recent_surprises = eps_surprises[: len(eps_surprises) // 2]
-    older_surprises = eps_surprises[len(eps_surprises) // 2 :]
-
-    if recent_surprises and older_surprises:
-        recent_avg = sum(recent_surprises) / len(recent_surprises)
-        older_avg = sum(older_surprises) / len(older_surprises)
-        if recent_avg > older_avg + 2:
-            trend = "improving"
-        elif recent_avg < older_avg - 2:
-            trend = "declining"
-        else:
-            trend = "stable"
-    else:
-        trend = "stable"
-
-    return EarningsSurpriseAnalysis(
+    return EarningsAnalysis(
         ticker=ticker,
-        total_quarters=total,
-        eps_beat_count=eps_beat,
-        eps_miss_count=eps_miss,
-        eps_meet_count=eps_meet,
-        eps_beat_rate=eps_beat_rate,
-        avg_eps_surprise_pct=avg_eps_surprise,
-        revenue_beat_count=revenue_beat,
-        revenue_miss_count=revenue_miss,
-        revenue_beat_rate=revenue_beat_rate,
-        avg_revenue_surprise_pct=avg_rev_surprise,
-        trend=trend,
+        total_quarters=analysis["total_quarters"],
+        eps_beats=analysis["eps_beats"],
+        eps_misses=analysis["eps_misses"],
+        eps_beat_rate=analysis.get("eps_beat_rate"),
+        avg_eps_surprise_pct=analysis.get("avg_eps_surprise_pct"),
+        revenue_beats=analysis["revenue_beats"],
+        revenue_misses=analysis["revenue_misses"],
+        revenue_beat_rate=analysis.get("revenue_beat_rate"),
     )

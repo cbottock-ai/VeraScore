@@ -1,206 +1,243 @@
-import logging
-import struct
+"""
+sqlite-vec vector store implementation.
 
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+Uses sqlite-vec extension for efficient vector similarity search
+within the same SQLite database as other app data.
+"""
 
+import json
+import sqlite3
+from typing import Any
+
+from src.core.config import settings
 from src.rag.vectorstore.base import SearchResult, VectorStore
-
-logger = logging.getLogger(__name__)
-
-
-def serialize_embedding(embedding: list[float]) -> bytes:
-    """Serialize embedding to binary format for sqlite-vec."""
-    return struct.pack(f"{len(embedding)}f", *embedding)
 
 
 class SqliteVecStore(VectorStore):
-    """Vector store using sqlite-vec extension."""
+    """sqlite-vec based vector store."""
 
-    def __init__(self, db: Session, dimension: int = 1536):
-        self.db = db
-        self.dimension = dimension
-        self._ensure_tables()
+    def __init__(self, db_path: str, table_name: str = "transcript_embeddings"):
+        self.db_path = db_path
+        self.table_name = table_name
+        self._dimension = settings.embedding_dimension
+        self._initialized = False
 
-    def _ensure_tables(self) -> None:
-        """Ensure the virtual table and metadata table exist."""
-        # Metadata table for chunk info
-        self.db.execute(
-            text("""
-                CREATE TABLE IF NOT EXISTS transcript_embedding_meta (
-                    chunk_id INTEGER PRIMARY KEY,
-                    transcript_id INTEGER,
-                    ticker TEXT,
-                    fiscal_quarter INTEGER,
-                    fiscal_year INTEGER
-                )
-            """)
-        )
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get a connection with sqlite-vec loaded."""
+        conn = sqlite3.connect(self.db_path)
+        conn.enable_load_extension(True)
+        import sqlite_vec
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        return conn
 
-        # Create virtual table for vector search
-        self.db.execute(
-            text(f"""
-                CREATE VIRTUAL TABLE IF NOT EXISTS transcript_embeddings
-                USING vec0(
-                    chunk_id INTEGER PRIMARY KEY,
-                    embedding FLOAT[{self.dimension}]
-                )
-            """)
-        )
-        self.db.commit()
+    def _ensure_table(self, conn: sqlite3.Connection) -> None:
+        """Create the virtual table if it doesn't exist."""
+        if self._initialized:
+            return
+
+        # Create virtual table for vector storage
+        conn.execute(f"""
+            CREATE VIRTUAL TABLE IF NOT EXISTS {self.table_name} USING vec0(
+                chunk_id INTEGER PRIMARY KEY,
+                embedding FLOAT[{self._dimension}]
+            )
+        """)
+
+        # Create metadata table for additional info
+        conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name}_meta (
+                chunk_id INTEGER PRIMARY KEY,
+                transcript_id INTEGER,
+                ticker TEXT,
+                speaker TEXT,
+                section TEXT,
+                content TEXT
+            )
+        """)
+
+        conn.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_{self.table_name}_meta_transcript
+            ON {self.table_name}_meta(transcript_id)
+        """)
+
+        conn.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_{self.table_name}_meta_ticker
+            ON {self.table_name}_meta(ticker)
+        """)
+
+        conn.commit()
+        self._initialized = True
 
     async def add_embedding(
-        self, chunk_id: int, embedding: list[float], metadata: dict | None = None
+        self,
+        chunk_id: int,
+        embedding: list[float],
+        metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Add a single embedding to the store."""
-        embedding_bytes = serialize_embedding(embedding)
+        """Store an embedding with its chunk ID and metadata."""
+        conn = self._get_connection()
+        try:
+            self._ensure_table(conn)
 
-        # Insert into virtual table
-        self.db.execute(
-            text("""
-                INSERT OR REPLACE INTO transcript_embeddings (chunk_id, embedding)
-                VALUES (:chunk_id, :embedding)
-            """),
-            {"chunk_id": chunk_id, "embedding": embedding_bytes},
-        )
-
-        # Insert metadata
-        if metadata:
-            self.db.execute(
-                text("""
-                    INSERT OR REPLACE INTO transcript_embedding_meta
-                    (chunk_id, transcript_id, ticker, fiscal_quarter, fiscal_year)
-                    VALUES (:chunk_id, :transcript_id, :ticker, :fiscal_quarter, :fiscal_year)
-                """),
-                {
-                    "chunk_id": chunk_id,
-                    "transcript_id": metadata.get("transcript_id"),
-                    "ticker": metadata.get("ticker"),
-                    "fiscal_quarter": metadata.get("fiscal_quarter"),
-                    "fiscal_year": metadata.get("fiscal_year"),
-                },
+            # Insert into vector table
+            conn.execute(
+                f"INSERT OR REPLACE INTO {self.table_name}(chunk_id, embedding) VALUES (?, ?)",
+                (chunk_id, json.dumps(embedding)),
             )
 
-        self.db.commit()
-
-    async def add_embeddings_batch(
-        self, items: list[tuple[int, list[float], dict | None]]
-    ) -> None:
-        """Add multiple embeddings in a batch."""
-        for chunk_id, embedding, metadata in items:
-            embedding_bytes = serialize_embedding(embedding)
-
-            self.db.execute(
-                text("""
-                    INSERT OR REPLACE INTO transcript_embeddings (chunk_id, embedding)
-                    VALUES (:chunk_id, :embedding)
-                """),
-                {"chunk_id": chunk_id, "embedding": embedding_bytes},
-            )
-
+            # Insert metadata
             if metadata:
-                self.db.execute(
-                    text("""
-                        INSERT OR REPLACE INTO transcript_embedding_meta
-                        (chunk_id, transcript_id, ticker, fiscal_quarter, fiscal_year)
-                        VALUES (:chunk_id, :transcript_id, :ticker, :fiscal_quarter, :fiscal_year)
-                    """),
-                    {
-                        "chunk_id": chunk_id,
-                        "transcript_id": metadata.get("transcript_id"),
-                        "ticker": metadata.get("ticker"),
-                        "fiscal_quarter": metadata.get("fiscal_quarter"),
-                        "fiscal_year": metadata.get("fiscal_year"),
-                    },
+                conn.execute(
+                    f"""INSERT OR REPLACE INTO {self.table_name}_meta
+                        (chunk_id, transcript_id, ticker, speaker, section, content)
+                        VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        chunk_id,
+                        metadata.get("transcript_id"),
+                        metadata.get("ticker"),
+                        metadata.get("speaker"),
+                        metadata.get("section"),
+                        metadata.get("content"),
+                    ),
                 )
 
-        self.db.commit()
+            conn.commit()
+        finally:
+            conn.close()
+
+    async def add_embeddings_batch(
+        self,
+        items: list[tuple[int, list[float], dict[str, Any] | None]],
+    ) -> None:
+        """Store multiple embeddings efficiently."""
+        if not items:
+            return
+
+        conn = self._get_connection()
+        try:
+            self._ensure_table(conn)
+
+            for chunk_id, embedding, metadata in items:
+                conn.execute(
+                    f"INSERT OR REPLACE INTO {self.table_name}(chunk_id, embedding) VALUES (?, ?)",
+                    (chunk_id, json.dumps(embedding)),
+                )
+
+                if metadata:
+                    conn.execute(
+                        f"""INSERT OR REPLACE INTO {self.table_name}_meta
+                            (chunk_id, transcript_id, ticker, speaker, section, content)
+                            VALUES (?, ?, ?, ?, ?, ?)""",
+                        (
+                            chunk_id,
+                            metadata.get("transcript_id"),
+                            metadata.get("ticker"),
+                            metadata.get("speaker"),
+                            metadata.get("section"),
+                            metadata.get("content"),
+                        ),
+                    )
+
+            conn.commit()
+        finally:
+            conn.close()
 
     async def search(
         self,
         query_embedding: list[float],
         top_k: int = 5,
-        filter_metadata: dict | None = None,
+        filter_metadata: dict[str, Any] | None = None,
     ) -> list[SearchResult]:
         """Search for similar embeddings."""
-        query_bytes = serialize_embedding(query_embedding)
+        conn = self._get_connection()
+        try:
+            self._ensure_table(conn)
 
-        # Build query with optional metadata filter
-        select_cols = "e.chunk_id, e.distance, m.transcript_id, m.ticker"
-        select_cols += ", m.fiscal_quarter, m.fiscal_year"
+            # Build filter clause
+            where_clause = ""
+            params: list[Any] = [json.dumps(query_embedding), top_k]
 
-        if filter_metadata and filter_metadata.get("ticker"):
-            result = self.db.execute(
-                text(f"""
-                    SELECT {select_cols}
-                    FROM transcript_embeddings e
-                    JOIN transcript_embedding_meta m ON e.chunk_id = m.chunk_id
-                    WHERE e.embedding MATCH :query
-                      AND m.ticker = :ticker
-                      AND k = :top_k
-                    ORDER BY e.distance
-                """),
-                {
-                    "query": query_bytes,
-                    "ticker": filter_metadata["ticker"].upper(),
-                    "top_k": top_k,
-                },
-            )
-        else:
-            result = self.db.execute(
-                text(f"""
-                    SELECT {select_cols}
-                    FROM transcript_embeddings e
-                    JOIN transcript_embedding_meta m ON e.chunk_id = m.chunk_id
-                    WHERE e.embedding MATCH :query
-                      AND k = :top_k
-                    ORDER BY e.distance
-                """),
-                {"query": query_bytes, "top_k": top_k},
-            )
+            if filter_metadata:
+                conditions = []
+                if "ticker" in filter_metadata:
+                    conditions.append("m.ticker = ?")
+                    params.append(filter_metadata["ticker"])
+                if "section" in filter_metadata:
+                    conditions.append("m.section = ?")
+                    params.append(filter_metadata["section"])
+                if conditions:
+                    where_clause = "WHERE " + " AND ".join(conditions)
 
-        results = []
-        for row in result:
-            # Distance is L2, convert to similarity score (lower distance = higher similarity)
-            # Using 1 / (1 + distance) to normalize
-            similarity = 1.0 / (1.0 + row.distance)
-            results.append(
-                SearchResult(
-                    chunk_id=row.chunk_id,
-                    score=similarity,
-                    metadata={
-                        "transcript_id": row.transcript_id,
-                        "ticker": row.ticker,
-                        "fiscal_quarter": row.fiscal_quarter,
-                        "fiscal_year": row.fiscal_year,
-                    },
+            # Query with join to metadata
+            query = f"""
+                SELECT
+                    v.chunk_id,
+                    v.distance,
+                    m.content,
+                    m.transcript_id,
+                    m.ticker,
+                    m.speaker,
+                    m.section
+                FROM {self.table_name} v
+                LEFT JOIN {self.table_name}_meta m ON v.chunk_id = m.chunk_id
+                {where_clause}
+                WHERE v.embedding MATCH ?
+                ORDER BY v.distance
+                LIMIT ?
+            """
+
+            cursor = conn.execute(query, params)
+            results = []
+
+            for row in cursor.fetchall():
+                chunk_id, distance, content, transcript_id, ticker, speaker, section = row
+                results.append(
+                    SearchResult(
+                        chunk_id=chunk_id,
+                        content=content or "",
+                        score=1.0 - distance,  # Convert distance to similarity
+                        metadata={
+                            "transcript_id": transcript_id,
+                            "ticker": ticker,
+                            "speaker": speaker,
+                            "section": section,
+                        },
+                    )
                 )
-            )
 
-        return results
+            return results
+        finally:
+            conn.close()
 
     async def delete_by_transcript_id(self, transcript_id: int) -> int:
         """Delete all embeddings for a transcript."""
-        # Get chunk IDs for this transcript
-        result = self.db.execute(
-            text("SELECT chunk_id FROM transcript_embedding_meta WHERE transcript_id = :tid"),
-            {"tid": transcript_id},
-        )
-        chunk_ids = [row.chunk_id for row in result]
+        conn = self._get_connection()
+        try:
+            self._ensure_table(conn)
 
-        if not chunk_ids:
-            return 0
-
-        # Delete from both tables
-        for chunk_id in chunk_ids:
-            self.db.execute(
-                text("DELETE FROM transcript_embeddings WHERE chunk_id = :cid"),
-                {"cid": chunk_id},
+            # Get chunk IDs for this transcript
+            cursor = conn.execute(
+                f"SELECT chunk_id FROM {self.table_name}_meta WHERE transcript_id = ?",
+                (transcript_id,),
             )
-            self.db.execute(
-                text("DELETE FROM transcript_embedding_meta WHERE chunk_id = :cid"),
-                {"cid": chunk_id},
+            chunk_ids = [row[0] for row in cursor.fetchall()]
+
+            if not chunk_ids:
+                return 0
+
+            # Delete from both tables
+            placeholders = ",".join("?" * len(chunk_ids))
+            conn.execute(
+                f"DELETE FROM {self.table_name} WHERE chunk_id IN ({placeholders})",
+                chunk_ids,
+            )
+            conn.execute(
+                f"DELETE FROM {self.table_name}_meta WHERE chunk_id IN ({placeholders})",
+                chunk_ids,
             )
 
-        self.db.commit()
-        return len(chunk_ids)
+            conn.commit()
+            return len(chunk_ids)
+        finally:
+            conn.close()

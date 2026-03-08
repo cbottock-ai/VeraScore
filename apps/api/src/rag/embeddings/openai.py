@@ -1,15 +1,15 @@
-import logging
+"""
+OpenAI embedding provider implementation.
+"""
 
 from openai import AsyncOpenAI
 
 from src.core.config import settings
 from src.rag.embeddings.base import EmbeddingProvider
 
-logger = logging.getLogger(__name__)
-
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
-    """OpenAI embedding provider using text-embedding-3-small."""
+    """OpenAI text-embedding-3-small provider."""
 
     def __init__(
         self,
@@ -25,7 +25,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         return self._dimension
 
     async def embed_text(self, text: str) -> list[float]:
-        """Embed a single text string."""
+        """Generate embedding for a single text."""
         response = await self._client.embeddings.create(
             model=self._model,
             input=text,
@@ -34,16 +34,17 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         return response.data[0].embedding
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple text strings in a batch."""
+        """Generate embeddings for multiple texts efficiently."""
         if not texts:
             return []
 
-        # OpenAI supports batching up to 2048 inputs
+        # OpenAI supports batching natively
         response = await self._client.embeddings.create(
             model=self._model,
             input=texts,
             dimensions=self._dimension,
         )
-        # Sort by index to ensure correct ordering
+
+        # Sort by index to maintain order
         sorted_data = sorted(response.data, key=lambda x: x.index)
         return [item.embedding for item in sorted_data]

@@ -1,11 +1,18 @@
+"""
+Pydantic schemas for earnings API responses.
+"""
+
+from datetime import date
 from pydantic import BaseModel
 
 
 class EarningsRecord(BaseModel):
+    """A single earnings record."""
+
     ticker: str
     fiscal_date: str
-    fiscal_quarter: int
-    fiscal_year: int
+    fiscal_quarter: int | None = None
+    fiscal_year: int | None = None
     eps_estimated: float | None = None
     eps_actual: float | None = None
     eps_surprise: float | None = None
@@ -17,58 +24,69 @@ class EarningsRecord(BaseModel):
 
 
 class EarningsHistoryResponse(BaseModel):
+    """Response for earnings history query."""
+
     ticker: str
-    records: list[EarningsRecord]
+    earnings: list[dict]  # Raw earnings dicts for flexibility
+    analysis: dict | None = None
 
 
-class UpcomingEarnings(BaseModel):
-    ticker: str
-    company_name: str | None = None
-    fiscal_date: str
+class UpcomingEarning(BaseModel):
+    """An upcoming earnings announcement."""
+
+    symbol: str
+    name: str | None = None
+    date: str
+    time: str | None = None  # 'bmo', 'amc', or None
     eps_estimated: float | None = None
     revenue_estimated: float | None = None
-    report_time: str | None = None
 
 
-class UpcomingEarningsResponse(BaseModel):
-    days: int
-    earnings: list[UpcomingEarnings]
+class EarningsCalendarResponse(BaseModel):
+    """Response for earnings calendar query."""
+
+    from_date: str
+    to_date: str
+    earnings: list[UpcomingEarning]
 
 
-class TranscriptSearchResult(BaseModel):
-    ticker: str
-    fiscal_quarter: int
-    fiscal_year: int
-    chunk_content: str
+class TranscriptChunkResult(BaseModel):
+    """A search result from transcript RAG."""
+
+    content: str
+    score: float
+    ticker: str | None = None
     speaker: str | None = None
     section: str | None = None
-    relevance_score: float
 
 
 class TranscriptSearchResponse(BaseModel):
+    """Response for transcript search."""
+
     query: str
-    results: list[TranscriptSearchResult]
+    results: list[TranscriptChunkResult]
 
 
-class TranscriptSummary(BaseModel):
+class TranscriptSummaryResponse(BaseModel):
+    """Response for transcript summary."""
+
     ticker: str
-    fiscal_quarter: int
     fiscal_year: int
-    call_date: str | None = None
+    fiscal_quarter: int
+    call_date: str
     summary: str
-    key_topics: list[str]
+    key_points: list[str] | None = None
 
 
-class EarningsSurpriseAnalysis(BaseModel):
+class EarningsAnalysis(BaseModel):
+    """Earnings pattern analysis."""
+
     ticker: str
     total_quarters: int
-    eps_beat_count: int
-    eps_miss_count: int
-    eps_meet_count: int
-    eps_beat_rate: float
-    avg_eps_surprise_pct: float
-    revenue_beat_count: int
-    revenue_miss_count: int
-    revenue_beat_rate: float
-    avg_revenue_surprise_pct: float
-    trend: str  # "improving", "declining", "stable"
+    eps_beats: int
+    eps_misses: int
+    eps_beat_rate: float | None = None
+    avg_eps_surprise_pct: float | None = None
+    revenue_beats: int
+    revenue_misses: int
+    revenue_beat_rate: float | None = None
