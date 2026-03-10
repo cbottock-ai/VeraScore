@@ -133,14 +133,22 @@ async def fmp_earnings_historical(ticker: str, limit: int = 12) -> list[dict]:
         return data[:limit]
 
 
-async def fmp_earnings_calendar(from_date: str, to_date: str) -> list[dict]:
+async def fmp_earnings_calendar(
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> list[dict]:
     """Get earnings calendar for a date range. Dates in YYYY-MM-DD format."""
     if not settings.fmp_api_key:
         return []
+    params: dict[str, Any] = {"apikey": settings.fmp_api_key}
+    if from_date:
+        params["from"] = from_date
+    if to_date:
+        params["to"] = to_date
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"{FMP_BASE}/earnings-calendar",
-            params={"from": from_date, "to": to_date, "apikey": settings.fmp_api_key},
+            params=params,
             timeout=15,
         )
         resp.raise_for_status()
@@ -263,39 +271,6 @@ async def fmp_batch_quote(symbols: list[str]) -> list[dict]:
             results.append(data)
 
     return results
-
-
-# --- Earnings APIs ---
-
-
-async def fmp_earnings_calendar(
-    from_date: str | None = None,
-    to_date: str | None = None,
-) -> list[dict]:
-    """
-    Get upcoming earnings announcements.
-
-    Args:
-        from_date: Start date (YYYY-MM-DD), defaults to today
-        to_date: End date (YYYY-MM-DD), defaults to 7 days from now
-    """
-    if not settings.fmp_api_key:
-        return []
-
-    params: dict[str, Any] = {"apikey": settings.fmp_api_key}
-    if from_date:
-        params["from"] = from_date
-    if to_date:
-        params["to"] = to_date
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{FMP_BASE}/earning-calendar",
-            params=params,
-            timeout=15,
-        )
-        resp.raise_for_status()
-        return resp.json()
 
 
 async def fmp_earnings_historical(ticker: str, limit: int = 20) -> list[dict]:

@@ -202,7 +202,7 @@ class SqliteVecStore(VectorStore):
                     SearchResult(
                         chunk_id=chunk_id,
                         content=content or "",
-                        score=1.0 - distance,  # Convert distance to similarity
+                        score=1.0 - (distance ** 2) / 2,  # L2 dist → cosine similarity (unit vectors)
                         metadata={
                             "transcript_id": transcript_id,
                             "ticker": ticker,

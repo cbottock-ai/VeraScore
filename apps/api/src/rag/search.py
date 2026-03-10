@@ -87,104 +87,40 @@ async def embed_transcript_chunks(
 
 async def search_transcripts(
     query: str,
+    db: Session | None = None,
     ticker: str | None = None,
-    section: str | None = None,
     top_k: int = 5,
+    section: str | None = None,
     db_path: str = "verascore.db",
-) -> list[SearchResult]:
+) -> "TranscriptSearchResponse":
     """
     Semantic search over transcript chunks.
 
     Args:
-        query: Natural language search query
+        query: Search query
+        db: Database session (unused, kept for interface compatibility)
         ticker: Optional filter to specific stock
         section: Optional filter to "prepared_remarks" or "q_and_a"
         top_k: Number of results to return
-
-    Returns:
-        List of SearchResult with matching chunks
+        db_path: Path to database
     """
-    # Embed query
+    from src.earnings.schemas import TranscriptChunkResult, TranscriptSearchResponse
+
     provider = get_embedding_provider()
     query_embedding = await provider.embed_text(query)
 
-    # Build filters
     filters = {}
     if ticker:
         filters["ticker"] = ticker.upper()
     if section:
         filters["section"] = section
 
-    # Search
     store = get_vector_store(db_path)
     results = await store.search(
         query_embedding=query_embedding,
         top_k=top_k,
         filter_metadata=filters if filters else None,
     )
-
-    return results
-
-
-async def delete_transcript_embeddings(
-    transcript_id: int,
-    db_path: str = "verascore.db",
-) -> int:
-    """Delete all embeddings for a transcript."""
-    store = get_vector_store(db_path)
-    return await store.delete_by_transcript_id(transcript_id)
-
-
-# --- Functions for chat tools ---
-
-from src.earnings.schemas import TranscriptChunkResult, TranscriptSearchResponse
-
-
-async def _do_vector_search(
-    query: str,
-    ticker: str | None = None,
-    section: str | None = None,
-    top_k: int = 5,
-    db_path: str = "verascore.db",
-) -> list[SearchResult]:
-    """Internal function to perform vector search."""
-    provider = get_embedding_provider()
-    query_embedding = await provider.embed_text(query)
-
-    filters = {}
-    if ticker:
-        filters["ticker"] = ticker.upper()
-    if section:
-        filters["section"] = section
-
-    store = get_vector_store(db_path)
-    return await store.search(
-        query_embedding=query_embedding,
-        top_k=top_k,
-        filter_metadata=filters if filters else None,
-    )
-
-
-async def search_transcripts(
-    query: str,
-    db: Session | None = None,
-    ticker: str | None = None,
-    top_k: int = 5,
-    section: str | None = None,
-    db_path: str = "verascore.db",
-) -> TranscriptSearchResponse:
-    """
-    Search transcripts - unified interface for tools and direct calls.
-
-    Args:
-        query: Search query
-        db: Database session (optional, for compatibility with tools.py)
-        ticker: Filter to specific ticker
-        top_k: Number of results
-        section: Filter to section (prepared_remarks, q_and_a)
-        db_path: Path to database
-    """
-    results = await _do_vector_search(query, ticker, section, top_k, db_path)
 
     chunks = [
         TranscriptChunkResult(
@@ -198,6 +134,15 @@ async def search_transcripts(
     ]
 
     return TranscriptSearchResponse(query=query, results=chunks)
+
+
+async def delete_transcript_embeddings(
+    transcript_id: int,
+    db_path: str = "verascore.db",
+) -> int:
+    """Delete all embeddings for a transcript."""
+    store = get_vector_store(db_path)
+    return await store.delete_by_transcript_id(transcript_id)
 
 
 async def get_transcript_summary(
