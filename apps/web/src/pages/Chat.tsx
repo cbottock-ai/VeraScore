@@ -15,6 +15,9 @@ import type { ConversationSummary, Message } from '@/types/chat'
 export function ChatPage() {
   const queryClient = useQueryClient()
   const [activeId, setActiveId] = useState<number | null>(null)
+  const [disclaimerDismissed, setDisclaimerDismissed] = useState(() =>
+    localStorage.getItem('disclaimer-dismissed') === 'true'
+  )
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -147,8 +150,30 @@ export function ChatPage() {
   const conversations = convsQuery.data || []
   const provider = providerQuery.data
 
+  const handleDismissDisclaimer = () => {
+    localStorage.setItem('disclaimer-dismissed', 'true')
+    setDisclaimerDismissed(true)
+  }
+
   return (
-    <div className="flex h-[calc(100vh-88px)] -my-6 -mx-4">
+    <div className="flex flex-col h-[calc(100vh-88px)] -my-6 -mx-4">
+      {/* First-visit disclaimer banner */}
+      {!disclaimerDismissed && (
+        <div className="flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 text-xs text-amber-800 dark:text-amber-300 shrink-0">
+          <span>
+            <strong>Disclaimer:</strong> VeraScore provides research tools, not financial advice.
+            Always consult a qualified financial advisor before making investment decisions.
+          </span>
+          <button
+            onClick={handleDismissDisclaimer}
+            className="shrink-0 text-amber-600 hover:text-amber-900 dark:hover:text-amber-100 font-bold"
+            aria-label="Dismiss"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+    <div className="flex flex-1 min-h-0">
       {/* Sidebar */}
       <div className="w-64 border-r border-border flex flex-col bg-muted/30">
         <div className="p-3 border-b border-border">
@@ -280,8 +305,12 @@ export function ChatPage() {
               Send
             </button>
           </div>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            VeraScore provides research tools, not financial advice. Always consult a qualified financial advisor before making investment decisions.
+          </p>
         </div>
       </div>
+    </div>
     </div>
   )
 }

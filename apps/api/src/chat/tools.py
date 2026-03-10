@@ -23,6 +23,7 @@ from src.portfolios.service import (
     list_portfolios,
 )
 from src.rag.search import get_transcript_summary, search_transcripts
+from src.core.config import settings
 from src.scoring.engine import calculate_composite_score, calculate_factor_score
 
 logger = logging.getLogger(__name__)
@@ -218,6 +219,26 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["ticker"],
         },
     },
+    {
+        "name": "search_web",
+        "description": (
+            "Search the web for recent news, articles, and information. Use this for breaking news, "
+            "recent events, analyst commentary, or any topic not covered by proprietary tools. "
+            "Returns titles, URLs, and summaries of the most relevant results."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max results to return (1-10)",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 
@@ -380,6 +401,25 @@ async def execute_tool(name: str, args: dict[str, Any], db: Session) -> str:
                 },
                 default=str,
             )
+
+        elif name == "search_web":
+            if not settings.tavily_api_key:
+                return json.dumps({"error": "Web search is not configured (missing TAVILY_API_KEY)"})
+            from tavily import TavilyClient
+
+            client = TavilyClient(api_key=settings.tavily_api_key)
+            max_results = min(args.get("max_results", 5), 10)
+            response = client.search(args["query"], max_results=max_results, search_depth="basic")
+            results = [
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("url", ""),
+                    "content": r.get("content", ""),
+                    "score": r.get("score"),
+                }
+                for r in response.get("results", [])
+            ]
+            return json.dumps({"query": args["query"], "results": results}, default=str)
 
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
