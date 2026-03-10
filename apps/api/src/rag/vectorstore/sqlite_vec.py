@@ -154,44 +154,50 @@ class SqliteVecStore(VectorStore):
         try:
             self._ensure_table(conn)
 
-            # Build filter clause
-            where_clause = ""
-            params: list[Any] = [json.dumps(query_embedding), top_k]
-
-            if filter_metadata:
-                conditions = []
-                if "ticker" in filter_metadata:
-                    conditions.append("m.ticker = ?")
-                    params.append(filter_metadata["ticker"])
-                if "section" in filter_metadata:
-                    conditions.append("m.section = ?")
-                    params.append(filter_metadata["section"])
-                if conditions:
-                    where_clause = "WHERE " + " AND ".join(conditions)
-
-            # Query with join to metadata
-            query = f"""
-                SELECT
-                    v.chunk_id,
-                    v.distance,
-                    m.content,
-                    m.transcript_id,
-                    m.ticker,
-                    m.speaker,
-                    m.section
-                FROM {self.table_name} v
-                LEFT JOIN {self.table_name}_meta m ON v.chunk_id = m.chunk_id
-                {where_clause}
-                WHERE v.embedding MATCH ?
-                ORDER BY v.distance
-                LIMIT ?
+            # sqlite-vec KNN query syntax requires k = ? in WHERE clause
+            # First do the vector search, then filter by metadata
+            vec_query = f"""
+                SELECT chunk_id, distance
+                FROM {self.table_name}
+                WHERE embedding MATCH ? AND k = ?
             """
 
-            cursor = conn.execute(query, params)
-            results = []
+            cursor = conn.execute(vec_query, [json.dumps(query_embedding), top_k * 3])
+            vec_results = cursor.fetchall()
 
-            for row in cursor.fetchall():
-                chunk_id, distance, content, transcript_id, ticker, speaker, section = row
+            if not vec_results:
+                return []
+
+            # Get metadata for matched chunks
+            chunk_ids = [r[0] for r in vec_results]
+            distances = {r[0]: r[1] for r in vec_results}
+
+            placeholders = ",".join("?" * len(chunk_ids))
+            meta_query = f"""
+                SELECT chunk_id, content, transcript_id, ticker, speaker, section
+                FROM {self.table_name}_meta
+                WHERE chunk_id IN ({placeholders})
+            """
+
+            cursor = conn.execute(meta_query, chunk_ids)
+            meta_results = {r[0]: r[1:] for r in cursor.fetchall()}
+
+            # Combine and filter results
+            results = []
+            for chunk_id in chunk_ids:
+                if chunk_id not in meta_results:
+                    continue
+
+                content, transcript_id, ticker, speaker, section = meta_results[chunk_id]
+
+                # Apply metadata filters
+                if filter_metadata:
+                    if "ticker" in filter_metadata and ticker != filter_metadata["ticker"]:
+                        continue
+                    if "section" in filter_metadata and section != filter_metadata["section"]:
+                        continue
+
+                distance = distances[chunk_id]
                 results.append(
                     SearchResult(
                         chunk_id=chunk_id,
@@ -205,6 +211,9 @@ class SqliteVecStore(VectorStore):
                         },
                     )
                 )
+
+                if len(results) >= top_k:
+                    break
 
             return results
         finally:

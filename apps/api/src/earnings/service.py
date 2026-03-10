@@ -273,15 +273,18 @@ from src.earnings.schemas import (
     UpcomingEarning,
 )
 
+# Save reference to internal function before overwriting
+_get_earnings_history_internal = get_earnings_history
 
-async def get_earnings_history_for_tool(
+
+async def get_earnings_history(
     ticker: str,
     db: Session,
     limit: int = 12,
 ) -> EarningsHistoryResponse:
     """Get earnings history formatted for chat tool response."""
     ticker = ticker.upper()
-    earnings = await get_earnings_history(db, ticker, limit)
+    earnings = await _get_earnings_history_internal(db, ticker, limit)
     analysis = analyze_earnings_pattern(earnings)
 
     return EarningsHistoryResponse(
@@ -289,10 +292,6 @@ async def get_earnings_history_for_tool(
         earnings=earnings,
         analysis=analysis if "error" not in analysis else None,
     )
-
-
-# Alias for tools.py import
-get_earnings_history = get_earnings_history_for_tool
 
 
 async def get_upcoming_earnings(

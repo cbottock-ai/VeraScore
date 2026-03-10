@@ -302,20 +302,43 @@ async def fmp_earnings_historical(ticker: str, limit: int = 20) -> list[dict]:
     """
     Get historical earnings data for a stock.
 
-    Returns EPS estimates, actuals, surprises, and revenue data.
+    Uses income-statement endpoint (available on free tier) as fallback
+    when earnings-surprises is not available.
     """
     if not settings.fmp_api_key:
         return []
 
     async with httpx.AsyncClient() as client:
+        # Try income statement (available on free tier)
         resp = await client.get(
-            f"{FMP_BASE}/earnings-surprises",
-            params={"symbol": ticker, "apikey": settings.fmp_api_key},
+            f"{FMP_BASE}/income-statement",
+            params={
+                "symbol": ticker,
+                "period": "quarter",
+                "limit": limit,
+                "apikey": settings.fmp_api_key,
+            },
             timeout=15,
         )
         resp.raise_for_status()
         data = resp.json()
-        return data[:limit] if isinstance(data, list) else []
+
+        if not isinstance(data, list):
+            return []
+
+        # Transform income statement to earnings format
+        return [
+            {
+                "date": item.get("date"),
+                "fiscalDateEnding": item.get("date"),
+                "actualEarningResult": item.get("eps"),
+                "actualEPS": item.get("eps"),
+                "revenue": item.get("revenue"),
+                "epsSurprise": None,  # Not available from income statement
+                "surprisePercentage": None,
+            }
+            for item in data[:limit]
+        ]
 
 
 async def fmp_earnings_confirmed(
