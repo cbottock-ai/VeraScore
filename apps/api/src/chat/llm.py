@@ -12,11 +12,55 @@ from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+_CITATION_SENTINEL = "\x00CITATIONS:"
+
+
+def _build_citations(tool_name: str, args: dict, result_json: str) -> list[dict]:
+    """Build citation metadata from a tool call."""
+    if tool_name == "search_web":
+        try:
+            data = json.loads(result_json)
+            return [
+                {"tool": "web", "label": r["title"], "url": r["url"]}
+                for r in data.get("results", [])[:3]
+                if r.get("url")
+            ]
+        except Exception:
+            return []
+    elif tool_name in ("search_earnings_transcripts", "get_transcript_summary"):
+        ticker = args.get("ticker", "").upper()
+        year = args.get("year", "")
+        quarter = args.get("quarter", "")
+        if ticker and year and quarter:
+            label = f"{ticker} Q{quarter} {year} Transcript"
+        elif ticker:
+            label = f"{ticker} Earnings Transcript"
+        else:
+            label = "Earnings Transcript"
+        return [{"tool": "rag", "label": label}]
+    elif tool_name == "get_earnings_history":
+        ticker = args.get("ticker", "").upper()
+        return [{"tool": "earnings", "label": f"{ticker} Earnings History"}]
+    elif tool_name == "analyze_earnings_surprises":
+        ticker = args.get("ticker", "").upper()
+        return [{"tool": "earnings", "label": f"{ticker} Earnings Surprises"}]
+    elif tool_name == "get_fundamentals":
+        ticker = args.get("ticker", "").upper()
+        return [{"tool": "fundamentals", "label": f"{ticker} Fundamentals"}]
+    elif tool_name == "get_stock_score":
+        ticker = args.get("ticker", "").upper()
+        return [{"tool": "score", "label": f"{ticker} VeraScore"}]
+    elif tool_name == "get_stock_info":
+        ticker = args.get("ticker", "").upper()
+        return [{"tool": "data", "label": f"{ticker} Market Data"}]
+    return []
+
+
 SYSTEM_PROMPT = """You are VeraScore, an expert financial research assistant with two complementary sources of knowledge:
 
 1. YOUR TRAINING KNOWLEDGE — broad market context, industry dynamics, competitive landscapes, macroeconomic trends, and historical analysis across thousands of companies. Use this freely for background, context, and reasoning.
 
-2. REAL-TIME TOOLS — current prices, fundamentals, VeraScore ratings, earnings history, and earnings call transcripts ingested directly from filings. Always use tools for specific facts, numbers, and recent events. Never fabricate these.
+2. REAL-TIME TOOLS — current prices, fundamentals, VeraScore ratings, earnings history, earnings call transcripts, and live web search. Always use tools for specific facts, numbers, and recent events. Never fabricate these. For breaking news, recent analyst commentary, or anything time-sensitive, use the search_web tool — do not say you lack access to real-time data.
 
 When answering:
 - Use your training knowledge for context, industry comparisons, and reasoning
@@ -63,6 +107,7 @@ class AnthropicProvider(LLMProvider):
             if msg["role"] in ("user", "assistant"):
                 anthropic_messages.append({"role": msg["role"], "content": msg["content"]})
 
+        all_citations: list[dict] = []
         max_iterations = 10
         for _ in range(max_iterations):
             # Stream the response
@@ -125,7 +170,7 @@ class AnthropicProvider(LLMProvider):
             # Check if we need to handle tool calls
             tool_uses = [c for c in collected_content if c["type"] == "tool_use"]
             if not tool_uses:
-                return
+                break
 
             # Execute tool calls and build tool results
             anthropic_messages.append({"role": "assistant", "content": collected_content})
@@ -134,6 +179,7 @@ class AnthropicProvider(LLMProvider):
                 logger.info(f"Executing tool: {tool_use['name']}({tool_use['input']})")
                 log_tool_call(tool_use["name"])
                 result = await execute_tool(tool_use["name"], tool_use["input"], db)
+                all_citations.extend(_build_citations(tool_use["name"], tool_use["input"], result))
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -142,6 +188,9 @@ class AnthropicProvider(LLMProvider):
                     }
                 )
             anthropic_messages.append({"role": "user", "content": tool_results})
+
+        if all_citations:
+            yield f"{_CITATION_SENTINEL}{json.dumps(all_citations)}"
 
 
 class OpenAIProvider(LLMProvider):
@@ -163,6 +212,7 @@ class OpenAIProvider(LLMProvider):
             if msg["role"] in ("user", "assistant"):
                 openai_messages.append({"role": msg["role"], "content": msg["content"]})
 
+        all_citations: list[dict] = []
         max_iterations = 10
         for _ in range(max_iterations):
             collected_text = ""
@@ -216,7 +266,7 @@ class OpenAIProvider(LLMProvider):
 
             # No tool calls — we're done
             if not tool_calls_data:
-                return
+                break
 
             # Build assistant message with tool calls
             assistant_tool_calls = []
@@ -245,6 +295,7 @@ class OpenAIProvider(LLMProvider):
                 logger.info(f"Executing tool: {name}({args})")
                 log_tool_call(name)
                 result = await execute_tool(name, args, db)
+                all_citations.extend(_build_citations(name, args, result))
                 openai_messages.append(
                     {
                         "role": "tool",
@@ -252,6 +303,9 @@ class OpenAIProvider(LLMProvider):
                         "content": result,
                     }
                 )
+
+        if all_citations:
+            yield f"{_CITATION_SENTINEL}{json.dumps(all_citations)}"
 
 
 # Runtime state for provider toggle

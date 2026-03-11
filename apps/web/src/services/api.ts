@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type { StockSearchResponse, StockDetail, FundamentalsResponse, StockScoresResponse } from '@/types/stock'
-import type { ConversationSummary, ConversationDetail, LLMProviderInfo } from '@/types/chat'
+import type { ConversationSummary, ConversationDetail, LLMProviderInfo, Citation } from '@/types/chat'
 import type {
   PortfolioListResponse,
   PortfolioDetailResponse,
@@ -176,6 +176,7 @@ export async function sendMessage(
   conversationId: number,
   content: string,
   onChunk: (text: string) => void,
+  onCitations?: (citations: Citation[]) => void,
 ): Promise<void> {
   // Build headers with auth token if available
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -215,7 +216,12 @@ export async function sendMessage(
         const data = line.slice(6)
         if (data === '[DONE]') return
         try {
-          onChunk(JSON.parse(data))
+          const parsed = JSON.parse(data)
+          if (parsed && typeof parsed === 'object' && parsed.__citations) {
+            onCitations?.(parsed.__citations)
+          } else {
+            onChunk(parsed)
+          }
         } catch {
           onChunk(data)
         }

@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.orm import Session
 
-from src.chat.llm import get_provider, get_provider_info
+from src.chat.llm import _CITATION_SENTINEL, get_provider, get_provider_info
 from src.chat.models import Conversation, Message
 from src.chat.schemas import ConversationDetail, ConversationSummary, MessageResponse
 from src.chat.tracing import trace_context
@@ -118,9 +118,13 @@ async def send_message(
     ) as trace:
         try:
             async for chunk in provider.stream_response(history, db):
-                full_response += chunk
-                # SSE format — JSON-encode to preserve newlines
-                yield f"data: {json.dumps(chunk)}\n\n"
+                if chunk.startswith(_CITATION_SENTINEL):
+                    citations_json = chunk[len(_CITATION_SENTINEL):]
+                    yield f"data: {json.dumps({'__citations': json.loads(citations_json)})}\n\n"
+                else:
+                    full_response += chunk
+                    # SSE format — JSON-encode to preserve newlines
+                    yield f"data: {json.dumps(chunk)}\n\n"
 
             # Save assistant response
             if full_response:

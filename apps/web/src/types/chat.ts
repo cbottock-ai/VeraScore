@@ -5,11 +5,18 @@ export interface ConversationSummary {
   updated_at: string
 }
 
+export interface Citation {
+  tool: string
+  label: string
+  url?: string
+}
+
 export interface Message {
   id: number
   role: 'user' | 'assistant'
   content: string
   created_at: string
+  citations?: Citation[]
 }
 
 export interface ConversationDetail {

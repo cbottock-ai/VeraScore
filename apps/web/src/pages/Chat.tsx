@@ -10,7 +10,7 @@ import {
   getProvider,
   setProvider,
 } from '@/services/api'
-import type { ConversationSummary, Message } from '@/types/chat'
+import type { Citation, ConversationSummary, Message } from '@/types/chat'
 
 export function ChatPage() {
   const queryClient = useQueryClient()
@@ -22,6 +22,7 @@ export function ChatPage() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
+  const [pendingCitations, setPendingCitations] = useState<Citation[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -105,13 +106,22 @@ export function ChatPage() {
     setInput('')
     setStreaming(true)
     setStreamingText('')
+    setPendingCitations([])
 
     try {
       let accumulated = ''
-      await sendMessage(convId, userMessage.content, (chunk) => {
-        accumulated += chunk
-        setStreamingText(accumulated)
-      })
+      let citations: Citation[] = []
+      await sendMessage(
+        convId,
+        userMessage.content,
+        (chunk) => {
+          accumulated += chunk
+          setStreamingText(accumulated)
+        },
+        (c) => {
+          citations = c
+        },
+      )
 
       if (accumulated) {
         const assistantMessage: Message = {
@@ -119,6 +129,7 @@ export function ChatPage() {
           role: 'assistant',
           content: accumulated,
           created_at: new Date().toISOString(),
+          citations: citations.length > 0 ? citations : undefined,
         }
         setMessages((prev) => [...prev, assistantMessage])
       }
@@ -315,6 +326,15 @@ export function ChatPage() {
   )
 }
 
+const CITATION_ICONS: Record<string, string> = {
+  web: '🌐',
+  rag: '📄',
+  earnings: '📊',
+  fundamentals: '📈',
+  score: '⭐',
+  data: '💹',
+}
+
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user'
 
@@ -327,14 +347,38 @@ function MessageBubble({ message }: { message: Message }) {
       >
         {isUser ? 'You' : 'VS'}
       </div>
-      <div
-        className={`max-w-[70%] rounded-lg px-4 py-3 text-sm ${
-          isUser
-            ? 'bg-primary text-primary-foreground whitespace-pre-wrap'
-            : 'bg-muted prose prose-sm prose-neutral dark:prose-invert max-w-none'
-        }`}
-      >
-        {isUser ? message.content : <ReactMarkdown>{message.content}</ReactMarkdown>}
+      <div className="max-w-[70%] flex flex-col gap-1">
+        <div
+          className={`rounded-lg px-4 py-3 text-sm ${
+            isUser
+              ? 'bg-primary text-primary-foreground whitespace-pre-wrap'
+              : 'bg-muted prose prose-sm prose-neutral dark:prose-invert max-w-none'
+          }`}
+        >
+          {isUser ? message.content : <ReactMarkdown>{message.content}</ReactMarkdown>}
+        </div>
+        {!isUser && message.citations && message.citations.length > 0 && (
+          <div className="flex flex-wrap gap-1 px-1">
+            {message.citations.map((c, i) => (
+              <span key={i} className="inline-flex items-center gap-1">
+                {c.url ? (
+                  <a
+                    href={c.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-0.5 bg-background hover:bg-muted transition-colors"
+                  >
+                    {CITATION_ICONS[c.tool] ?? '📌'} {c.label}
+                  </a>
+                ) : (
+                  <span className="text-[11px] text-muted-foreground border border-border rounded px-2 py-0.5 bg-background">
+                    {CITATION_ICONS[c.tool] ?? '📌'} {c.label}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
