@@ -58,6 +58,9 @@ class TranscriptChunkResult(BaseModel):
     ticker: str | None = None
     speaker: str | None = None
     section: str | None = None
+    fiscal_year: int | None = None
+    fiscal_quarter: int | None = None
+    call_date: str | None = None
 
 
 class TranscriptSearchResponse(BaseModel):

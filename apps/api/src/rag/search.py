@@ -4,6 +4,8 @@ RAG search service.
 Handles semantic search over embedded content.
 """
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from src.earnings.models import TranscriptChunk
@@ -122,16 +124,33 @@ async def search_transcripts(
         filter_metadata=filters if filters else None,
     )
 
-    chunks = [
-        TranscriptChunkResult(
-            content=r.content,
-            score=r.score,
-            ticker=r.metadata.get("ticker"),
-            speaker=r.metadata.get("speaker"),
-            section=r.metadata.get("section"),
+    # Look up year/quarter for each result via transcript_id in metadata
+    transcript_cache: dict[int, Any] = {}
+    if db:
+        from src.earnings.models import Transcript
+
+        for r in results:
+            tid = r.metadata.get("transcript_id")
+            if tid and tid not in transcript_cache:
+                t = db.get(Transcript, tid)
+                transcript_cache[tid] = t
+
+    chunks = []
+    for r in results:
+        tid = r.metadata.get("transcript_id")
+        t = transcript_cache.get(tid) if tid else None
+        chunks.append(
+            TranscriptChunkResult(
+                content=r.content,
+                score=r.score,
+                ticker=r.metadata.get("ticker"),
+                speaker=r.metadata.get("speaker"),
+                section=r.metadata.get("section"),
+                fiscal_year=t.fiscal_year if t else None,
+                fiscal_quarter=t.fiscal_quarter if t else None,
+                call_date=t.call_date.isoformat() if t and t.call_date else None,
+            )
         )
-        for r in results
-    ]
 
     return TranscriptSearchResponse(query=query, results=chunks)
 

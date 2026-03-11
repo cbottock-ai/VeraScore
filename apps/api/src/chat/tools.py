@@ -220,6 +220,20 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "list_available_transcripts",
+        "description": (
+            "List all earnings call transcripts available in the database. "
+            "Call this first before searching or summarizing transcripts to confirm which quarters are actually available. "
+            "Do not assume transcript availability from training knowledge."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Optional: filter by ticker symbol"},
+            },
+        },
+    },
+    {
         "name": "search_web",
         "description": (
             "Search the web for recent news, articles, and information. Use this for breaking news, "
@@ -398,6 +412,31 @@ async def execute_tool(name: str, args: dict[str, Any], db: Session) -> str:
                             for d in (ir_content.documents if ir_content else [])
                         ],
                     },
+                },
+                default=str,
+            )
+
+        elif name == "list_available_transcripts":
+            from src.earnings.models import Transcript
+
+            query = db.query(Transcript).order_by(
+                Transcript.ticker, Transcript.fiscal_year.desc(), Transcript.fiscal_quarter.desc()
+            )
+            if args.get("ticker"):
+                query = query.filter(Transcript.ticker == args["ticker"].upper())
+            transcripts = query.all()
+            return json.dumps(
+                {
+                    "available_transcripts": [
+                        {
+                            "ticker": t.ticker,
+                            "fiscal_year": t.fiscal_year,
+                            "fiscal_quarter": t.fiscal_quarter,
+                            "call_date": t.call_date.isoformat() if t.call_date else None,
+                        }
+                        for t in transcripts
+                    ],
+                    "total": len(transcripts),
                 },
                 default=str,
             )
