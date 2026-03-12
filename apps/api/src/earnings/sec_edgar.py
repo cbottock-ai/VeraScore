@@ -148,10 +148,127 @@ async def fetch_filing_text(filing: SECFiling) -> str | None:
 
 async def search_8k_earnings(ticker: str, limit: int = 4) -> list[SECFiling]:
     """Search for 8-K filings that contain earnings announcements."""
-    # 8-K Item 2.02 is "Results of Operations and Financial Condition"
-    # This is typically the earnings announcement filing
     filings = await fetch_recent_filings(ticker, form_types=["8-K"], limit=20)
-
-    # Filter to likely earnings announcements (would need to check content)
-    # For now, return recent 8-Ks
     return filings[:limit]
+
+
+async def fetch_earnings_8ks(ticker: str, limit: int = 4) -> list[SECFiling]:
+    """
+    Fetch 8-K filings that are earnings releases (Item 2.02).
+
+    Uses the 'items' field from SEC submissions to filter to earnings 8-Ks only.
+    """
+    cik = await get_company_cik(ticker)
+    if not cik:
+        return []
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            headers = {"User-Agent": "VeraScore research@verascore.com"}
+            resp = await client.get(
+                f"{SEC_EDGAR_BASE}/submissions/CIK{cik}.json",
+                headers=headers,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            recent = data.get("filings", {}).get("recent", {})
+            forms = recent.get("form", [])
+            dates = recent.get("filingDate", [])
+            accessions = recent.get("accessionNumber", [])
+            primary_docs = recent.get("primaryDocument", [])
+            items_list = recent.get("items", [])
+
+            filings = []
+            cik_int = str(int(cik))  # Strip leading zeros for archive URL
+
+            for i, form in enumerate(forms):
+                if form != "8-K":
+                    continue
+                # Item 2.02 = Results of Operations (earnings release)
+                items_str = items_list[i] if i < len(items_list) else ""
+                if "2.02" not in str(items_str):
+                    continue
+
+                accession = accessions[i]
+                primary_doc = primary_docs[i] if i < len(primary_docs) else ""
+                accession_clean = accession.replace("-", "")
+
+                filing_url = (
+                    f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{accession_clean}"
+                )
+                doc_url = f"{filing_url}/{primary_doc}" if primary_doc else ""
+
+                filings.append(
+                    SECFiling(
+                        form_type=form,
+                        filing_date=dates[i] if i < len(dates) else "",
+                        accession_number=accession,
+                        primary_doc_url=doc_url,
+                        filing_url=filing_url,
+                        description=f"Earnings Release (Item 2.02)",
+                    )
+                )
+
+                if len(filings) >= limit:
+                    break
+
+            return filings
+
+    except Exception as e:
+        logger.error(f"Failed to fetch earnings 8-Ks for {ticker}: {e}")
+        return []
+
+
+async def fetch_exhibit_99_1(filing: SECFiling) -> str | None:
+    """
+    Fetch the Exhibit 99.1 (press release) text from an earnings 8-K.
+
+    Parses the primary 8-K document to find the exhibit link, then fetches it.
+    """
+    if not filing.primary_doc_url:
+        return None
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            headers = {"User-Agent": "VeraScore research@verascore.com"}
+
+            # Fetch the main 8-K document to find exhibit links
+            resp = await client.get(filing.primary_doc_url, headers=headers, timeout=15)
+            resp.raise_for_status()
+
+            # Find relative .htm links — Exhibit 99.1 is typically the only one
+            import re as _re
+
+            links = _re.findall(r'href=["\']([^"\'> ]+\.htm[l]?)["\']', resp.text, _re.IGNORECASE)
+            # Filter out the primary doc itself and pick the first exhibit
+            primary_name = filing.primary_doc_url.rsplit("/", 1)[-1]
+            base_url = filing.primary_doc_url.rsplit("/", 1)[0]
+
+            exhibit_links = [l for l in links if l != primary_name and not l.startswith("http")]
+            if not exhibit_links:
+                return None
+
+            # Deduplicate while preserving order
+            seen: set[str] = set()
+            unique_links = [l for l in exhibit_links if not (l in seen or seen.add(l))]  # type: ignore[func-returns-value]
+            exhibit_url = f"{base_url}/{unique_links[0]}"
+
+            # Fetch the exhibit
+            resp2 = await client.get(exhibit_url, headers=headers, timeout=15)
+            resp2.raise_for_status()
+
+            # Strip HTML tags
+            text = _re.sub(r"<script[^>]*>.*?</script>", "", resp2.text, flags=_re.DOTALL)
+            text = _re.sub(r"<style[^>]*>.*?</style>", "", text, flags=_re.DOTALL)
+            text = _re.sub(r"<[^>]+>", " ", text)
+            text = _re.sub(r"&#\d+;", " ", text)
+            text = _re.sub(r"&[a-z]+;", " ", text)
+            text = _re.sub(r"\s+", " ", text).strip()
+
+            return text if len(text) > 500 else None
+
+    except Exception as e:
+        logger.error(f"Failed to fetch Exhibit 99.1 for {filing.filing_date}: {e}")
+        return None

@@ -220,6 +220,27 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "ingest_earnings_press_releases",
+        "description": (
+            "Fetch and ingest earnings press releases from SEC EDGAR for a stock. "
+            "Call this when a user asks about a company's earnings and transcripts are not available. "
+            "Retrieves the official Exhibit 99.1 press release from recent earnings 8-K filings — "
+            "contains revenue, EPS, guidance, segment results, and CEO/CFO commentary."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Stock ticker symbol"},
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of recent quarters to ingest (1-4)",
+                    "default": 2,
+                },
+            },
+            "required": ["ticker"],
+        },
+    },
+    {
         "name": "list_available_transcripts",
         "description": (
             "List all earnings call transcripts available in the database. "
@@ -415,6 +436,14 @@ async def execute_tool(name: str, args: dict[str, Any], db: Session) -> str:
                 },
                 default=str,
             )
+
+        elif name == "ingest_earnings_press_releases":
+            from src.earnings.ingestion import ingest_press_release_from_sec
+
+            ticker = args["ticker"].upper()
+            limit = min(args.get("limit", 2), 4)
+            results = await ingest_press_release_from_sec(db, ticker, limit=limit)
+            return json.dumps({"ticker": ticker, "results": results}, default=str)
 
         elif name == "list_available_transcripts":
             from src.earnings.models import Transcript
