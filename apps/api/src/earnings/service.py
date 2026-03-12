@@ -366,3 +366,80 @@ def analyze_earnings_surprises(
         revenue_misses=analysis["revenue_misses"],
         revenue_beat_rate=analysis.get("revenue_beat_rate"),
     )
+
+
+def compute_earnings_quality_metrics(db: Session, ticker: str, limit: int = 12) -> dict:
+    """
+    Compute earnings quality metrics for the scoring engine.
+
+    Returns a dict with keys: eps_beat_rate, revenue_beat_rate,
+    avg_eps_surprise_pct, eps_beat_streak.
+    All values are floats or None if insufficient data.
+    """
+    ticker = ticker.upper()
+    rows = (
+        db.query(Earnings)
+        .filter(Earnings.ticker == ticker)
+        .order_by(Earnings.fiscal_date.desc())
+        .limit(limit)
+        .all()
+    )
+
+    if not rows:
+        return {}
+
+    eps_beats = 0
+    eps_misses = 0
+    rev_beats = 0
+    rev_misses = 0
+    surprise_sum = 0.0
+    surprise_count = 0
+    streak = 0
+    streak_broken = False
+
+    for row in rows:
+        # EPS beat/miss
+        if row.eps_surprise_pct is not None:
+            if row.eps_surprise_pct > 0:
+                eps_beats += 1
+                if not streak_broken:
+                    streak += 1
+            else:
+                eps_misses += 1
+                streak_broken = True
+            surprise_sum += row.eps_surprise_pct
+            surprise_count += 1
+        elif row.eps_surprise is not None and row.eps_estimated and row.eps_estimated != 0:
+            # Compute pct if not stored
+            pct = (row.eps_surprise / abs(row.eps_estimated)) * 100
+            if pct > 0:
+                eps_beats += 1
+                if not streak_broken:
+                    streak += 1
+            else:
+                eps_misses += 1
+                streak_broken = True
+            surprise_sum += pct
+            surprise_count += 1
+
+        # Revenue beat/miss
+        if row.revenue_surprise_pct is not None:
+            if row.revenue_surprise_pct > 0:
+                rev_beats += 1
+            else:
+                rev_misses += 1
+        elif row.revenue_actual and row.revenue_estimated and row.revenue_estimated > 0:
+            if row.revenue_actual >= row.revenue_estimated:
+                rev_beats += 1
+            else:
+                rev_misses += 1
+
+    eps_total = eps_beats + eps_misses
+    rev_total = rev_beats + rev_misses
+
+    return {
+        "eps_beat_rate": round(eps_beats / eps_total * 100, 1) if eps_total > 0 else None,
+        "revenue_beat_rate": round(rev_beats / rev_total * 100, 1) if rev_total > 0 else None,
+        "avg_eps_surprise_pct": round(surprise_sum / surprise_count, 2) if surprise_count > 0 else None,
+        "eps_beat_streak": streak if not streak_broken or streak > 0 else 0,
+    }

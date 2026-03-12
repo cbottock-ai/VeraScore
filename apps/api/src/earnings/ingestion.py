@@ -10,7 +10,7 @@ from datetime import date, datetime
 from sqlalchemy.orm import Session
 
 from src.earnings.models import Transcript
-from src.earnings.sec_edgar import fetch_earnings_8ks, fetch_exhibit_99_1
+from src.earnings.sec_edgar import extract_fiscal_period, fetch_earnings_8ks, fetch_exhibit_99_1
 from src.earnings.service import get_transcript, list_available_transcripts
 from src.rag.chunking import chunk_transcript
 from src.rag.search import embed_transcript_chunks
@@ -136,9 +136,26 @@ async def ingest_press_release_from_sec(
             results.append({"status": "error", "filing_date": filing_date, "error": "bad date"})
             continue
 
-        # Approximate fiscal quarter from calendar date
-        fiscal_quarter = (parsed_date.month - 1) // 3 + 1
-        fiscal_year = parsed_date.year
+        # Fetch the exhibit text first so we can extract the accurate fiscal period
+        text = await fetch_exhibit_99_1(filing)
+        if not text:
+            results.append({
+                "status": "no_text",
+                "ticker": ticker,
+                "filing_date": filing_date,
+            })
+            continue
+
+        # Extract fiscal year/quarter from press release text (authoritative)
+        fiscal_year, fiscal_quarter = extract_fiscal_period(text)
+        if not fiscal_year or not fiscal_quarter:
+            # Fall back to calendar approximation from filing date
+            fiscal_quarter = (parsed_date.month - 1) // 3 + 1
+            fiscal_year = parsed_date.year
+            logger.warning(
+                f"{ticker}: could not extract fiscal period from press release, "
+                f"using calendar fallback Q{fiscal_quarter} {fiscal_year}"
+            )
 
         # Skip if already ingested
         existing = (
@@ -158,17 +175,6 @@ async def ingest_press_release_from_sec(
                 "fiscal_year": fiscal_year,
                 "fiscal_quarter": fiscal_quarter,
                 "chunks": len(existing.chunks),
-            })
-            continue
-
-        # Fetch the exhibit text
-        text = await fetch_exhibit_99_1(filing)
-        if not text:
-            results.append({
-                "status": "no_text",
-                "ticker": ticker,
-                "fiscal_year": fiscal_year,
-                "fiscal_quarter": fiscal_quarter,
             })
             continue
 

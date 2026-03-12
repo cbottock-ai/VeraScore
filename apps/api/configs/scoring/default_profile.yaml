@@ -5,12 +5,14 @@ description: "Balanced scoring across all factors"
 
 factors:
   - config: valuation_v1
-    weight: 0.25
+    weight: 0.22
   - config: growth_v1
-    weight: 0.20
+    weight: 0.18
   - config: profitability_v1
-    weight: 0.20
+    weight: 0.18
   - config: quality_v1
-    weight: 0.20
+    weight: 0.17
   - config: momentum_v1
+    weight: 0.10
+  - config: earnings_quality_v1
     weight: 0.15

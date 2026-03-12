@@ -9,6 +9,97 @@ import httpx
 logger = logging.getLogger(__name__)
 
 SEC_EDGAR_BASE = "https://data.sec.gov"
+
+_QUARTER_WORDS = {"first": 1, "second": 2, "third": 3, "fourth": 4}
+
+
+def extract_fiscal_period(text: str) -> tuple[int | None, int | None]:
+    """
+    Extract fiscal year and quarter from earnings press release text.
+
+    Strategy: find fiscal_quarter and fiscal_year independently, then combine.
+    Explicit "fiscal YYYY" text always beats calendar heuristics.
+    Returns (fiscal_year, fiscal_quarter) or (None, None) if not found.
+    """
+    text_lower = text[:5000].lower()
+
+    # --- Step 1: Extract fiscal quarter ---
+    fiscal_quarter: int | None = None
+
+    # "fiscal 20XX first/second/third/fourth quarter" or "first/second/third/fourth quarter of fiscal"
+    m = re.search(r"(first|second|third|fourth)\s+quarter", text_lower)
+    if m:
+        fiscal_quarter = _QUARTER_WORDS[m.group(1)]
+
+    # Q1/Q2/Q3/Q4 notation
+    if fiscal_quarter is None:
+        m = re.search(r"\bq([1-4])\b", text_lower)
+        if m:
+            fiscal_quarter = int(m.group(1))
+
+    if fiscal_quarter is None:
+        return None, None
+
+    # --- Step 2: Extract fiscal year (most-reliable source first) ---
+
+    # Best: explicit "fiscal 20XX" or "fiscal year 20XX" tightly paired with quarter
+    # Check most-specific patterns first to avoid matching guidance text for other quarters
+
+    # "fiscal 20XX first/second/... quarter"
+    m = re.search(r"fiscal\s+(?:year\s+)?(20\d{2})\s+(?:first|second|third|fourth)\s+quarter", text_lower)
+    if m:
+        return int(m.group(1)), fiscal_quarter
+
+    # "Xth quarter and fiscal 20XX" — title pattern (e.g. NVDA "Fourth Quarter and Fiscal 2026")
+    q_words = {1: "first", 2: "second", 3: "third", 4: "fourth"}
+    q_word = q_words.get(fiscal_quarter, "")
+    m = re.search(rf"{q_word}\s+quarter\s+and\s+fiscal\s+(?:year\s+)?(20\d{{2}})", text_lower)
+    if m:
+        return int(m.group(1)), fiscal_quarter
+
+    # "Xth quarter of fiscal 20XX" — constrained to the same quarter from Step 1
+    m = re.search(rf"{q_word}\s+quarter\s+(?:of\s+)?fiscal\s+(?:year\s+)?(20\d{{2}})", text_lower)
+    if m:
+        return int(m.group(1)), fiscal_quarter
+
+    # "Q3 fiscal 2025" / "Q3 FY2025" / "Q4 and FY 2025" (TSLA-style)
+    m = re.search(r"\bq([1-4])\s+(?:and\s+)?(?:fiscal\s+|fy\s+|fy)(20\d{2})", text_lower)
+    if m:
+        return int(m.group(2)), int(m.group(1))
+
+    # Standalone "FY 2025" or "FY2025"
+    m = re.search(r"\bfy\s*(20\d{2})\b", text_lower)
+    if m:
+        return int(m.group(1)), fiscal_quarter
+
+    # "fiscal year 20XX" in the body — use the one nearest the quarter mention
+    # (prior year comparisons also appear, so find max among those near "quarter")
+    fy_matches = re.findall(r"fiscal\s+year\s+(20\d{2})", text_lower)
+    if fy_matches:
+        return max(int(y) for y in fy_matches), fiscal_quarter
+
+    # "fiscal 20XX" (without "year") — NVDA style, take max to avoid prior-year refs
+    fiscal_matches = re.findall(r"\bfiscal\s+(20\d{2})\b", text_lower)
+    if fiscal_matches:
+        return max(int(y) for y in fiscal_matches), fiscal_quarter
+
+    # Fallback: "quarter ended Month DD, YYYY" → derive year with late-year heuristic
+    m_y = re.search(r"quarter\s+ended\s+(\w+)\s+\d{1,2},?\s+(20\d{2})", text_lower)
+    if m_y:
+        period_month_str = m_y.group(1)
+        period_end_year = int(m_y.group(2))
+        late_year_months = {"october", "november", "december"}
+        if period_month_str in late_year_months and fiscal_quarter in (1, 2):
+            return period_end_year + 1, fiscal_quarter
+        return period_end_year, fiscal_quarter
+
+    # Last resort: year from announcement date in text
+    m = re.search(r"(?:january|february|march|april|may|june|july|august|september|october|november|december)"
+                  r"\s+\d{1,2},?\s+(20\d{2})", text_lower)
+    if m:
+        return int(m.group(1)), fiscal_quarter
+
+    return None, fiscal_quarter
 SEC_SEARCH_BASE = "https://efts.sec.gov/LATEST/search-index"
 
 

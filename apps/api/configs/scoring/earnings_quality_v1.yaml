@@ -1,0 +1,69 @@
+factor: earnings_quality
+version: 1
+label: "Earnings Quality"
+description: "Consistency and accuracy of earnings vs analyst estimates"
+default_weight: 0.15
+
+metrics:
+  - id: eps_beat_rate
+    source: earnings_quality.eps_beat_rate
+    label: "EPS Beat Rate"
+    scoring_method: threshold
+    higher_is_better: true
+    thresholds:
+      - min: 80
+        score: 100
+      - min: 65
+        score: 80
+      - min: 50
+        score: 60
+      - min: 35
+        score: 35
+      - default: 10
+    weight: 0.35
+
+  - id: revenue_beat_rate
+    source: earnings_quality.revenue_beat_rate
+    label: "Revenue Beat Rate"
+    scoring_method: threshold
+    higher_is_better: true
+    thresholds:
+      - min: 75
+        score: 100
+      - min: 60
+        score: 80
+      - min: 45
+        score: 60
+      - min: 30
+        score: 35
+      - default: 10
+    weight: 0.30
+
+  - id: avg_eps_surprise_pct
+    source: earnings_quality.avg_eps_surprise_pct
+    label: "Avg EPS Surprise %"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: -5
+      input_max: 10
+      output_min: 0
+      output_max: 100
+    weight: 0.20
+
+  - id: eps_beat_streak
+    source: earnings_quality.eps_beat_streak
+    label: "EPS Beat Streak"
+    scoring_method: threshold
+    higher_is_better: true
+    thresholds:
+      - min: 6
+        score: 100
+      - min: 4
+        score: 80
+      - min: 2
+        score: 60
+      - min: 1
+        score: 40
+      - default: 10
+    weight: 0.15

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from src.core.database import get_db
 from src.core.data_providers.fetcher import fetch_fundamentals, fetch_stock_info
+from src.earnings.service import compute_earnings_quality_metrics
 from src.scoring.configs import list_configs
 from src.scoring.engine import calculate_composite_score, calculate_factor_score
 from src.scoring.schemas import FactorScoreResponse, StockScoresResponse
@@ -15,6 +16,7 @@ async def get_scores(ticker: str, db: Session = Depends(get_db)):
     ticker = ticker.upper()
     stock_info = await fetch_stock_info(ticker)
     fundamentals = await fetch_fundamentals(ticker)
+    fundamentals["earnings_quality"] = compute_earnings_quality_metrics(db, ticker)
 
     result = calculate_composite_score(fundamentals, stock_info)
 
@@ -31,6 +33,7 @@ async def get_factor_score(ticker: str, factor: str, db: Session = Depends(get_d
     ticker = ticker.upper()
     stock_info = await fetch_stock_info(ticker)
     fundamentals = await fetch_fundamentals(ticker)
+    fundamentals["earnings_quality"] = compute_earnings_quality_metrics(db, ticker)
 
     # Map factor name to config file
     config_name = f"{factor}_v1"
