@@ -83,9 +83,11 @@ function toISO(d: Date) { return d.toISOString().split('T')[0] }
 
 function currentWeekBounds() {
   const today = new Date()
-  const dow = today.getDay()
+  const dow = today.getDay() // 0=Sun, 6=Sat
   const mon = new Date(today)
-  mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1))
+  if (dow === 0) mon.setDate(today.getDate() + 1)        // Sun → next Mon
+  else if (dow === 6) mon.setDate(today.getDate() + 2)   // Sat → next Mon
+  else mon.setDate(today.getDate() - (dow - 1))          // weekday → this Mon
   const fri = new Date(mon)
   fri.setDate(mon.getDate() + 4)
   return { from: toISO(mon), to: toISO(fri) }
