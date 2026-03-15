@@ -60,6 +60,23 @@ function TickerLogo({ symbol }: { symbol: string }) {
   )
 }
 
+// Small logo for monthly calendar cells (14px, no fallback text — just colored dot)
+function CalendarLogo({ symbol }: { symbol: string }) {
+  const [failed, setFailed] = useState(false)
+  const hue = symbol.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+  if (failed) {
+    return <div className="w-3.5 h-3.5 rounded-sm shrink-0" style={{ backgroundColor: `hsl(${hue} 55% 45%)` }} />
+  }
+  return (
+    <img
+      src={`https://financialmodelingprep.com/image-stock/${symbol}.png`}
+      alt=""
+      className="w-3.5 h-3.5 rounded-sm object-contain bg-white shrink-0"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
 // ─── Earnings Calendar helpers ───────────────────────────────────────────────
 
 function toISO(d: Date) { return d.toISOString().split('T')[0] }
@@ -151,10 +168,21 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
 
   const weekByDate = useMemo(() => filterAndGroup(weekQuery.data?.earnings ?? []), [weekQuery.data, watchlistOnly, watchlistSet])
   const monthByDate = useMemo(() => filterAndGroup(monthQuery.data?.earnings ?? []), [monthQuery.data, watchlistOnly, watchlistSet])
-  const weekDates = Object.keys(weekByDate).sort()
+
+  // Always show all 5 weekdays regardless of whether they have earnings
+  const weekDates = useMemo(() => {
+    const dates: string[] = []
+    const start = new Date(weekFrom + 'T00:00:00')
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(start)
+      d.setDate(start.getDate() + i)
+      dates.push(toISO(d))
+    }
+    return dates
+  }, [weekFrom])
   const monthWeeks = useMemo(() => getMonthWeeks(viewMonth.getFullYear(), viewMonth.getMonth()), [viewMonth])
   const monthName = viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  const weekReportCount = weekDates.reduce((n, d) => n + weekByDate[d].length, 0)
+  const weekReportCount = weekDates.reduce((n, d) => n + (weekByDate[d]?.length ?? 0), 0)
 
   const WatchlistToggle = (
     <button
@@ -194,15 +222,11 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
               </div>
             ))}
           </div>
-        ) : weekDates.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            {watchlistOnly ? 'No watchlist earnings this week' : 'No S&P 500 earnings this week'}
-          </div>
         ) : (
           <div className="flex gap-3">
             {weekDates.map(date => {
               const { weekday, date: dateLabel } = dayLabel(date)
-              const items = weekByDate[date]
+              const items = weekByDate[date] ?? []
               const isPast = date < todayStr
               return (
                 <div key={date} className={`flex-1 min-w-36 rounded-xl border bg-card overflow-hidden transition-opacity ${isPast ? 'opacity-50' : ''} ${date === todayStr ? 'border-primary/40' : 'border-border'}`}>
@@ -211,7 +235,9 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
                     <div className="text-[11px] text-muted-foreground mt-0.5">{dateLabel}</div>
                   </div>
                   <div className="p-2 space-y-1.5">
-                    {items.map((e, i) => {
+                    {items.length === 0 ? (
+                      <div className="py-4 text-center text-[11px] text-muted-foreground/40">—</div>
+                    ) : items.map((e, i) => {
                       const isWL = watchlistSet.has(e.symbol)
                       return (
                         <Link
@@ -309,11 +335,14 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
                               <Link
                                 key={i}
                                 to={`/research/${e.symbol}`}
-                                className={`block text-[10px] font-mono font-bold px-1.5 py-0.5 rounded truncate transition-colors ${
-                                  isWL ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted text-foreground/70 hover:text-foreground'
+                                className={`flex items-center gap-1 rounded py-0.5 px-1 transition-colors ${
+                                  isWL ? 'bg-primary/15 hover:bg-primary/25' : 'bg-muted hover:bg-muted/80'
                                 }`}
                               >
-                                {e.symbol}
+                                <CalendarLogo symbol={e.symbol} />
+                                <span className={`text-[10px] font-mono font-bold truncate ${isWL ? 'text-primary' : 'text-foreground/70'}`}>
+                                  {e.symbol}
+                                </span>
                               </Link>
                             )
                           })}
