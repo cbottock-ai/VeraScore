@@ -33,16 +33,16 @@ function BeatBadge({ pct }: { pct: number | null }) {
 
 // ─── Ticker Logo ─────────────────────────────────────────────────────────────
 
-function TickerLogo({ symbol }: { symbol: string }) {
+function TickerLogo({ symbol, size = 'md' }: { symbol: string; size?: 'sm' | 'md' }) {
   const [failed, setFailed] = useState(false)
   const initials = symbol.slice(0, 2)
-  // Deterministic hue from ticker string
   const hue = symbol.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+  const cls = size === 'sm' ? 'w-5 h-5 rounded' : 'w-7 h-7 rounded-md'
 
   if (failed) {
     return (
       <div
-        className="w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+        className={`${cls} flex items-center justify-center text-[10px] font-bold text-white shrink-0`}
         style={{ backgroundColor: `hsl(${hue} 55% 45%)` }}
       >
         {initials}
@@ -54,7 +54,7 @@ function TickerLogo({ symbol }: { symbol: string }) {
     <img
       src={`https://financialmodelingprep.com/image-stock/${symbol}.png`}
       alt={symbol}
-      className="w-7 h-7 rounded-md object-contain bg-white shrink-0"
+      className={`${cls} object-contain bg-white shrink-0`}
       onError={() => setFailed(true)}
     />
   )
@@ -236,35 +236,68 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
                     <div className="text-xs font-bold text-foreground uppercase tracking-wide">{weekday}</div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">{dateLabel}</div>
                   </div>
-                  <div className="p-2 space-y-1.5">
-                    {items.length === 0 ? (
-                      <div className="py-4 text-center text-[11px] text-muted-foreground/40">—</div>
-                    ) : items.map((e, i) => {
-                      const isWL = watchlistSet.has(e.symbol)
-                      return (
-                        <Link
-                          key={i}
-                          to={`/research/${e.symbol}`}
-                          className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${
-                            isWL ? 'bg-primary/10 border border-primary/30 hover:bg-primary/15' : 'bg-muted/50 border border-transparent hover:bg-muted'
-                          }`}
-                        >
-                          <TickerLogo symbol={e.symbol} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className={`text-xs font-bold font-mono leading-none ${isWL ? 'text-primary' : 'text-foreground'}`}>{e.symbol}</span>
-                              {e.time && (
-                                <span className="text-[9px] text-muted-foreground font-medium leading-none shrink-0">
-                                  {e.time === 'bmo' ? '▲' : e.time === 'amc' ? '▼' : ''}
-                                </span>
-                              )}
+                  {items.length === 0 ? (
+                    <div className="py-6 text-center text-[11px] text-muted-foreground/40">—</div>
+                  ) : (
+                    <div>
+                      {/* Pre / Post column labels */}
+                      <div className="flex border-b border-border/40">
+                        <div className="flex-1 py-1 text-center text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider border-r border-border/40">Pre</div>
+                        <div className="flex-1 py-1 text-center text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Post</div>
+                      </div>
+                      {/* Split columns */}
+                      <div className="flex min-h-[60px]">
+                        {(['bmo', 'amc'] as const).map((slot, si) => {
+                          const slotItems = items.filter(e => e.time === slot)
+                          return (
+                            <div key={slot} className={`flex-1 p-1.5 space-y-1 min-w-0 ${si === 0 ? 'border-r border-border/40' : ''}`}>
+                              {slotItems.map((e, i) => {
+                                const isWL = watchlistSet.has(e.symbol)
+                                return (
+                                  <Link
+                                    key={i}
+                                    to={`/research/${e.symbol}`}
+                                    className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors ${
+                                      isWL ? 'bg-primary/10 border border-primary/30 hover:bg-primary/15' : 'bg-muted/50 border border-transparent hover:bg-muted'
+                                    }`}
+                                  >
+                                    <TickerLogo symbol={e.symbol} size="sm" />
+                                    <div className="min-w-0">
+                                      <div className={`text-[10px] font-bold font-mono leading-none truncate ${isWL ? 'text-primary' : 'text-foreground'}`}>{e.symbol}</div>
+                                      {e.name && <div className="text-[9px] text-muted-foreground truncate leading-tight mt-0.5">{e.name}</div>}
+                                    </div>
+                                  </Link>
+                                )
+                              })}
                             </div>
-                            {e.name && <div className="text-[10px] text-muted-foreground truncate mt-0.5 leading-tight">{e.name}</div>}
-                          </div>
-                        </Link>
-                      )
-                    })}
-                  </div>
+                          )
+                        })}
+                      </div>
+                      {/* Unknown time — full width at bottom */}
+                      {items.some(e => e.time !== 'bmo' && e.time !== 'amc') && (
+                        <div className="border-t border-border/40 p-1.5 space-y-1">
+                          {items.filter(e => e.time !== 'bmo' && e.time !== 'amc').map((e, i) => {
+                            const isWL = watchlistSet.has(e.symbol)
+                            return (
+                              <Link
+                                key={i}
+                                to={`/research/${e.symbol}`}
+                                className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors ${
+                                  isWL ? 'bg-primary/10 border border-primary/30 hover:bg-primary/15' : 'bg-muted/50 border border-transparent hover:bg-muted'
+                                }`}
+                              >
+                                <TickerLogo symbol={e.symbol} size="sm" />
+                                <div className="min-w-0 flex-1">
+                                  <span className={`text-[10px] font-bold font-mono ${isWL ? 'text-primary' : 'text-foreground'}`}>{e.symbol}</span>
+                                  {e.name && <div className="text-[9px] text-muted-foreground truncate">{e.name}</div>}
+                                </div>
+                              </Link>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
