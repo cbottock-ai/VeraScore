@@ -135,7 +135,7 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
       {isLoading ? (
         <div className="flex gap-3 overflow-x-auto pb-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex-none w-36 rounded-xl border border-border bg-card p-3 space-y-2">
+            <div key={i} className="flex-1 min-w-36 rounded-xl border border-border bg-card p-3 space-y-2">
               <Skeleton className="h-4 w-16" />
               <Skeleton className="h-8 w-full rounded-lg" />
               <Skeleton className="h-8 w-full rounded-lg" />
@@ -153,7 +153,7 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
             const { weekday, date: dateLabel } = dayLabel(date)
             const items = byDate[date]
             return (
-              <div key={date} className="flex-none w-40 rounded-xl border border-border bg-card overflow-hidden">
+              <div key={date} className="flex-1 min-w-36 rounded-xl border border-border bg-card overflow-hidden">
                 {/* Day header */}
                 <div className="px-3 py-2.5 border-b border-border bg-muted/30 text-center">
                   <div className="text-xs font-bold text-foreground uppercase tracking-wide">{weekday}</div>
@@ -321,7 +321,7 @@ export function ResearchPage() {
   // ── No ticker selected: show earnings calendar ───────────────────────────
   if (!ticker) {
     return (
-      <div className="space-y-4 max-w-3xl">
+      <div className="space-y-4">
         <div>
           <h1 className="text-xl font-semibold">Research</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Search a ticker in the header to view scores and analysis</p>
