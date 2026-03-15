@@ -22,7 +22,7 @@ export function ChatPage() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
-  const [pendingCitations, setPendingCitations] = useState<Citation[]>([])
+  const [_pendingCitations, setPendingCitations] = useState<Citation[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 

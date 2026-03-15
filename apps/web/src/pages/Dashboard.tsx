@@ -1,5 +1,7 @@
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getMarketIndices, getQuotes, listPortfolios, getPortfolio } from '@/services/api'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { MarketIndex, StockQuote } from '@/services/api'
 
 const POPULAR_TICKERS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA']
@@ -7,54 +9,97 @@ const POPULAR_TICKERS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'
 function IndexCard({ index }: { index: MarketIndex }) {
   const isPositive = (index.change ?? 0) >= 0
   const changeColor = isPositive ? 'text-green-500' : 'text-red-500'
-  const arrow = isPositive ? '▲' : '▼'
+  const bgColor = isPositive ? 'bg-green-500/5' : 'bg-red-500/5'
 
   return (
-    <div className="bg-card rounded-lg p-4 border border-border">
-      <div className="text-sm text-muted-foreground mb-1">{index.name} - {index.symbol}</div>
-      <div className="text-2xl font-semibold mb-1">
+    <div className={`rounded-xl border border-border bg-card p-4 transition-colors hover:border-border/80 ${bgColor}`}>
+      <div className="text-xs text-muted-foreground mb-2 font-medium">{index.name}</div>
+      <div className="text-2xl font-semibold font-mono tabular-nums mb-1">
         {index.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '—'}
       </div>
-      <div className={`text-sm font-medium ${changeColor}`}>
-        {arrow} {Math.abs(index.change ?? 0).toFixed(2)} ({Math.abs(index.changePercent ?? 0).toFixed(2)}%)
+      <div className={`text-sm font-medium flex items-center gap-1 ${changeColor}`}>
+        <span>{isPositive ? '▲' : '▼'}</span>
+        <span>{Math.abs(index.change ?? 0).toFixed(2)}</span>
+        <span className="text-xs opacity-80">({Math.abs(index.changePercent ?? 0).toFixed(2)}%)</span>
       </div>
     </div>
   )
 }
 
-function MoversRow({ quote }: { quote: StockQuote }) {
-  const isPositive = (quote.change ?? 0) >= 0
+function MoversRow({ quote, onClick }: { quote: StockQuote; onClick: () => void }) {
+  const isPositive = (quote.changePercent ?? 0) >= 0
   const changeColor = isPositive ? 'text-green-500' : 'text-red-500'
 
   return (
-    <div className="flex items-center justify-between py-2 border-b border-border last:border-b-0">
-      <div className="font-medium">{quote.symbol}</div>
+    <button
+      onClick={onClick}
+      className="w-full flex items-center justify-between py-2.5 px-1 rounded-lg hover:bg-muted/40 transition-colors group text-left"
+    >
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
+          <span className="text-[10px] font-bold text-muted-foreground font-mono">
+            {(quote.symbol ?? '').slice(0, 2)}
+          </span>
+        </div>
+        <div>
+          <div className="font-medium text-sm group-hover:text-primary transition-colors">{quote.symbol}</div>
+          <div className="text-xs text-muted-foreground">{quote.name ?? ''}</div>
+        </div>
+      </div>
       <div className="text-right">
-        <div className="font-medium">
+        <div className="font-mono font-medium text-sm tabular-nums">
           ${quote.price?.toFixed(2) ?? '—'}
         </div>
-        <div className={`text-sm ${changeColor}`}>
+        <div className={`text-xs font-medium ${changeColor}`}>
           {isPositive ? '+' : ''}{quote.changePercent?.toFixed(2) ?? '0.00'}%
         </div>
+      </div>
+    </button>
+  )
+}
+
+function IndexCardSkeleton() {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+      <Skeleton className="h-3 w-20" />
+      <Skeleton className="h-7 w-32" />
+      <Skeleton className="h-4 w-16" />
+    </div>
+  )
+}
+
+function MoversRowSkeleton() {
+  return (
+    <div className="flex items-center justify-between py-2.5 px-1">
+      <div className="flex items-center gap-3">
+        <Skeleton className="w-8 h-8 rounded-lg" />
+        <div className="space-y-1">
+          <Skeleton className="h-3.5 w-12" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      </div>
+      <div className="text-right space-y-1">
+        <Skeleton className="h-3.5 w-14" />
+        <Skeleton className="h-3 w-10" />
       </div>
     </div>
   )
 }
 
 export function DashboardPage() {
+  const navigate = useNavigate()
+
   const { data: indices, isLoading: indicesLoading } = useQuery({
     queryKey: ['marketIndices'],
     queryFn: getMarketIndices,
     refetchInterval: 60000,
   })
 
-  // Get portfolios to check for watchlist holdings
   const { data: portfoliosData } = useQuery({
     queryKey: ['portfolios'],
     queryFn: listPortfolios,
   })
 
-  // Get first portfolio details if exists
   const firstPortfolioId = portfoliosData?.portfolios?.[0]?.id
   const { data: portfolioDetail } = useQuery({
     queryKey: ['portfolio', firstPortfolioId],
@@ -62,7 +107,6 @@ export function DashboardPage() {
     enabled: !!firstPortfolioId,
   })
 
-  // Get tickers from watchlist or use popular stocks
   const watchlistTickers = portfolioDetail?.holdings?.map(h => h.ticker) ?? []
   const tickersToFetch = watchlistTickers.length > 0 ? watchlistTickers : POPULAR_TICKERS
 
@@ -72,25 +116,28 @@ export function DashboardPage() {
     refetchInterval: 60000,
   })
 
-  // Sort alphabetically by symbol
-  const sortedQuotes = [...(quotes ?? [])].sort(
-    (a, b) => (a.symbol ?? '').localeCompare(b.symbol ?? '')
+  const sortedQuotes = [...(quotes ?? [])].sort((a, b) =>
+    Math.abs(b.changePercent ?? 0) - Math.abs(a.changePercent ?? 0)
   )
 
   const hasWatchlist = watchlistTickers.length > 0
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold mb-2">Welcome to VeraScore</h1>
-      <p className="text-muted-foreground mb-6">Your intelligent stock research companion</p>
+    <div className="space-y-6 max-w-5xl">
+      <div>
+        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Market overview and your watchlist</p>
+      </div>
 
-      {/* Market Indices - Top */}
-      <section className="mb-8">
-        <h2 className="text-lg font-medium mb-4 text-muted-foreground">Market Overview</h2>
+      {/* Market Indices */}
+      <section>
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Market Overview</h2>
         {indicesLoading ? (
-          <div className="text-muted-foreground">Loading market data...</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => <IndexCardSkeleton key={i} />)}
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {indices?.map((index) => (
               <IndexCard key={index.symbol} index={index} />
             ))}
@@ -98,25 +145,37 @@ export function DashboardPage() {
         )}
       </section>
 
-      {/* Content area with stocks on right */}
-      <div className="flex justify-end">
-        <section className="w-full max-w-sm">
-          <h2 className="text-lg font-medium mb-4 text-muted-foreground">
-            {hasWatchlist ? 'Watchlist Movers' : 'Most Popular'}
+      {/* Watchlist / Movers */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+            {hasWatchlist ? 'Watchlist' : 'Most Active'}
           </h2>
-          <div className="bg-card rounded-lg p-4 border border-border">
-            {quotesLoading ? (
-              <div className="text-muted-foreground">Loading...</div>
-            ) : sortedQuotes.length === 0 ? (
-              <div className="text-muted-foreground">No data available</div>
-            ) : (
-              sortedQuotes.slice(0, 7).map((quote) => (
-                <MoversRow key={quote.symbol} quote={quote} />
-              ))
-            )}
-          </div>
-        </section>
-      </div>
+          {!hasWatchlist && (
+            <button
+              onClick={() => navigate('/watchlist')}
+              className="text-xs text-primary hover:underline"
+            >
+              Add to watchlist →
+            </button>
+          )}
+        </div>
+        <div className="rounded-xl border border-border bg-card px-3 py-1">
+          {quotesLoading ? (
+            Array.from({ length: 7 }).map((_, i) => <MoversRowSkeleton key={i} />)
+          ) : sortedQuotes.length === 0 ? (
+            <p className="text-muted-foreground text-sm py-4 text-center">No data available</p>
+          ) : (
+            sortedQuotes.slice(0, 8).map((quote) => (
+              <MoversRow
+                key={quote.symbol}
+                quote={quote}
+                onClick={() => navigate(`/research/${quote.symbol}`)}
+              />
+            ))
+          )}
+        </div>
+      </section>
     </div>
   )
 }
