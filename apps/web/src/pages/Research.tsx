@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getStock, getFundamentals, getScores, getEarningsCalendar, getEarningsHistory, listPortfolios, getPortfolio } from '@/services/api'
 import type { EarningsRecord } from '@/services/api'
+import { SP500_TICKERS } from '@/data/sp500'
 import { MetricCard } from '@/components/MetricCard'
 import { ScoreGauge, FactorBar, FactorCard } from '@/components/ScoreCard'
 import { Badge } from '@/components/ui/badge'
@@ -48,10 +49,13 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
 
   const allEarnings = data?.earnings ?? []
 
+  // Filter to S&P 500 companies + any watchlist tickers not already in S&P 500
+  const relevant = allEarnings.filter(e => SP500_TICKERS.has(e.symbol) || watchlistSet.has(e.symbol))
+
   // Group by date, sort watchlist to top within each day
   const displayed = watchlistOnly
-    ? allEarnings.filter(e => watchlistSet.has(e.symbol))
-    : allEarnings
+    ? relevant.filter(e => watchlistSet.has(e.symbol))
+    : relevant
 
   const byDate = displayed.reduce<Record<string, typeof displayed>>((acc, e) => {
     acc[e.date] = acc[e.date] ?? []
