@@ -20,10 +20,6 @@ function formatCompact(value: number): string {
   return `$${value.toLocaleString()}`
 }
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
 
 function BeatBadge({ pct }: { pct: number | null }) {
   if (pct === null || pct === undefined) return <span className="text-muted-foreground font-mono text-xs">—</span>
@@ -37,6 +33,19 @@ function BeatBadge({ pct }: { pct: number | null }) {
 
 // ─── Upcoming Earnings Calendar ──────────────────────────────────────────────
 
+function dayLabel(dateStr: string) {
+  const d = new Date(dateStr + 'T00:00:00')
+  return {
+    weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
+    date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  }
+}
+
+function isWeekend(dateStr: string) {
+  const day = new Date(dateStr + 'T00:00:00').getDay()
+  return day === 0 || day === 6
+}
+
 function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: string[] }) {
   const [watchlistOnly, setWatchlistOnly] = useState(false)
   const watchlistSet = new Set(watchlistTickers)
@@ -48,23 +57,18 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
   })
 
   const allEarnings = data?.earnings ?? []
-
-  // Filter to S&P 500 companies + any watchlist tickers not already in S&P 500
   const relevant = allEarnings.filter(e => SP500_TICKERS.has(e.symbol) || watchlistSet.has(e.symbol))
-
-  // Group by date, sort watchlist to top within each day
-  const displayed = watchlistOnly
-    ? relevant.filter(e => watchlistSet.has(e.symbol))
-    : relevant
+  const displayed = watchlistOnly ? relevant.filter(e => watchlistSet.has(e.symbol)) : relevant
 
   const byDate = displayed.reduce<Record<string, typeof displayed>>((acc, e) => {
-    acc[e.date] = acc[e.date] ?? []
-    acc[e.date].push(e)
+    if (!isWeekend(e.date)) {
+      acc[e.date] = acc[e.date] ?? []
+      acc[e.date].push(e)
+    }
     return acc
   }, {})
-  const sortedDates = Object.keys(byDate).sort()
 
-  // Within each date: watchlist first, then rest
+  const sortedDates = Object.keys(byDate).sort()
   for (const date of sortedDates) {
     byDate[date].sort((a, b) => {
       const aW = watchlistSet.has(a.symbol) ? 0 : 1
@@ -73,16 +77,19 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
     })
   }
 
-  const totalCount = displayed.length
-
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-          Upcoming Earnings · Next 14 Days
-        </span>
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-semibold">Earnings Calendar</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">S&P 500 · Next 14 days</p>
+        </div>
         <div className="flex items-center gap-3">
-          {!isLoading && <span className="text-xs text-muted-foreground">{totalCount} reports</span>}
+          {!isLoading && (
+            <span className="text-xs text-muted-foreground">
+              {displayed.length} reports
+            </span>
+          )}
           <button
             onClick={() => setWatchlistOnly(v => !v)}
             className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
@@ -97,51 +104,68 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
       </div>
 
       {isLoading ? (
-        <div className="divide-y divide-border/50">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="px-4 py-3 flex items-center justify-between">
-              <div className="space-y-1.5">
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-3 w-32" />
-              </div>
-              <Skeleton className="h-4 w-20" />
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex-none w-36 rounded-xl border border-border bg-card p-3 space-y-2">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-8 w-full rounded-lg" />
+              <Skeleton className="h-8 w-full rounded-lg" />
+              <Skeleton className="h-8 w-3/4 rounded-lg" />
             </div>
           ))}
         </div>
       ) : sortedDates.length === 0 ? (
-        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-          {watchlistOnly ? 'No watchlist earnings in the next 14 days' : 'No earnings found'}
+        <div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
+          {watchlistOnly ? 'No watchlist earnings in the next 14 days' : 'No S&P 500 earnings found'}
         </div>
       ) : (
-        <div>
-          {sortedDates.map(date => (
-            <div key={date}>
-              <div className="px-4 py-2 bg-muted/30 border-b border-border/50 sticky top-0">
-                <span className="text-xs font-semibold text-muted-foreground">{formatDate(date)}</span>
-              </div>
-              {byDate[date].map((e, i) => (
-                <div key={i} className="px-4 py-2.5 flex items-center justify-between hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <Link to={`/research/${e.symbol}`} className="font-semibold text-sm font-mono text-primary hover:underline">
-                      {e.symbol}
-                    </Link>
-                    {watchlistSet.has(e.symbol) && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium">WL</span>
-                    )}
-                    {e.time && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                        {e.time === 'bmo' ? 'Pre' : e.time === 'amc' ? 'Post' : e.time}
-                      </span>
-                    )}
-                    {e.name && <span className="text-xs text-muted-foreground truncate max-w-[180px] hidden sm:block">{e.name}</span>}
-                  </div>
-                  {e.eps_estimated !== null && (
-                    <span className="text-xs text-muted-foreground font-mono">Est. ${e.eps_estimated.toFixed(2)}</span>
-                  )}
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {sortedDates.map(date => {
+            const { weekday, date: dateLabel } = dayLabel(date)
+            const items = byDate[date]
+            return (
+              <div key={date} className="flex-none w-40 rounded-xl border border-border bg-card overflow-hidden">
+                {/* Day header */}
+                <div className="px-3 py-2.5 border-b border-border bg-muted/30 text-center">
+                  <div className="text-xs font-bold text-foreground uppercase tracking-wide">{weekday}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">{dateLabel}</div>
                 </div>
-              ))}
-            </div>
-          ))}
+                {/* Ticker chips */}
+                <div className="p-2 space-y-1.5">
+                  {items.map((e, i) => {
+                    const isWL = watchlistSet.has(e.symbol)
+                    return (
+                      <Link
+                        key={i}
+                        to={`/research/${e.symbol}`}
+                        className={`block rounded-lg px-2.5 py-2 transition-colors group ${
+                          isWL
+                            ? 'bg-primary/10 border border-primary/30 hover:bg-primary/15'
+                            : 'bg-muted/50 border border-transparent hover:bg-muted'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={`text-xs font-bold font-mono ${isWL ? 'text-primary' : 'text-foreground'}`}>
+                            {e.symbol}
+                          </span>
+                          {e.time && (
+                            <span className="text-[9px] text-muted-foreground font-medium leading-none">
+                              {e.time === 'bmo' ? '▲pre' : e.time === 'amc' ? '▼post' : e.time}
+                            </span>
+                          )}
+                        </div>
+                        {e.name && (
+                          <div className="text-[10px] text-muted-foreground truncate mt-0.5 leading-tight">
+                            {e.name}
+                          </div>
+                        )}
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
