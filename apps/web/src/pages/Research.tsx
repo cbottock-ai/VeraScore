@@ -31,6 +31,35 @@ function BeatBadge({ pct }: { pct: number | null }) {
   )
 }
 
+// ─── Ticker Logo ─────────────────────────────────────────────────────────────
+
+function TickerLogo({ symbol }: { symbol: string }) {
+  const [failed, setFailed] = useState(false)
+  const initials = symbol.slice(0, 2)
+  // Deterministic hue from ticker string
+  const hue = symbol.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+
+  if (failed) {
+    return (
+      <div
+        className="w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+        style={{ backgroundColor: `hsl(${hue} 55% 45%)` }}
+      >
+        {initials}
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={`https://financialmodelingprep.com/image-stock/${symbol}.png`}
+      alt={symbol}
+      className="w-7 h-7 rounded-md object-contain bg-white shrink-0"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
 // ─── Upcoming Earnings Calendar ──────────────────────────────────────────────
 
 function dayLabel(dateStr: string) {
@@ -138,27 +167,30 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
                       <Link
                         key={i}
                         to={`/research/${e.symbol}`}
-                        className={`block rounded-lg px-2.5 py-2 transition-colors group ${
+                        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors group ${
                           isWL
                             ? 'bg-primary/10 border border-primary/30 hover:bg-primary/15'
                             : 'bg-muted/50 border border-transparent hover:bg-muted'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className={`text-xs font-bold font-mono ${isWL ? 'text-primary' : 'text-foreground'}`}>
-                            {e.symbol}
-                          </span>
-                          {e.time && (
-                            <span className="text-[9px] text-muted-foreground font-medium leading-none">
-                              {e.time === 'bmo' ? '▲pre' : e.time === 'amc' ? '▼post' : e.time}
+                        <TickerLogo symbol={e.symbol} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={`text-xs font-bold font-mono leading-none ${isWL ? 'text-primary' : 'text-foreground'}`}>
+                              {e.symbol}
                             </span>
+                            {e.time && (
+                              <span className="text-[9px] text-muted-foreground font-medium leading-none shrink-0">
+                                {e.time === 'bmo' ? '▲' : e.time === 'amc' ? '▼' : ''}
+                              </span>
+                            )}
+                          </div>
+                          {e.name && (
+                            <div className="text-[10px] text-muted-foreground truncate mt-0.5 leading-tight">
+                              {e.name}
+                            </div>
                           )}
                         </div>
-                        {e.name && (
-                          <div className="text-[10px] text-muted-foreground truncate mt-0.5 leading-tight">
-                            {e.name}
-                          </div>
-                        )}
                       </Link>
                     )
                   })}
