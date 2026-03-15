@@ -17,9 +17,25 @@ from src.scoring.routes import router as scoring_router
 from src.stocks.routes import router as stocks_router
 
 
+def _run_migrations():
+    """Add columns that may be missing from existing tables."""
+    with engine.connect() as conn:
+        from sqlalchemy import text
+        existing = {
+            row[1]
+            for row in conn.execute(text("PRAGMA table_info(transcripts)")).fetchall()
+        }
+        if "sentiment_score" not in existing:
+            conn.execute(text("ALTER TABLE transcripts ADD COLUMN sentiment_score REAL"))
+        if "sentiment_label" not in existing:
+            conn.execute(text("ALTER TABLE transcripts ADD COLUMN sentiment_label VARCHAR(20)"))
+        conn.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    _run_migrations()
     yield
 
 

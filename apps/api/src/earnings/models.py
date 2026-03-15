@@ -63,6 +63,10 @@ class Transcript(Base):
     full_text: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(50), default="fmp")
 
+    # Sentiment (scored from outlook section of press release)
+    sentiment_score: Mapped[float | None] = mapped_column(Float)  # 0-100
+    sentiment_label: Mapped[str | None] = mapped_column(String(20))  # positive/neutral/cautious/negative
+
     # Metadata
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

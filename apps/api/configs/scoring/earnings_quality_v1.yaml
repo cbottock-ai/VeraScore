@@ -66,4 +66,16 @@ metrics:
       - min: 1
         score: 40
       - default: 10
-    weight: 0.15
+    weight: 0.10
+
+  - id: sentiment_score
+    source: earnings_quality.sentiment_score
+    label: "Management Tone"
+    scoring_method: linear
+    higher_is_better: true
+    linear_bounds:
+      input_min: 0
+      input_max: 100
+      output_min: 0
+      output_max: 100
+    weight: 0.05

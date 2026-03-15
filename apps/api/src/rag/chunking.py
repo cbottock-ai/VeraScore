@@ -67,6 +67,63 @@ def chunk_text(
     return chunks
 
 
+_OUTLOOK_HEADERS = re.compile(
+    r"^\s*(?:business\s+)?(?:outlook|guidance|financial\s+outlook|forward.looking"
+    r"|future\s+outlook|fiscal\s+\w+\s+\w*\s*outlook|q\d\s+\w*\s*outlook"
+    r"|first|second|third|fourth)\b",
+    re.IGNORECASE,
+)
+
+
+def chunk_press_release(text: str) -> list[Chunk]:
+    """
+    Chunk an earnings press release with section awareness.
+
+    Detects 'Outlook'/'Guidance' headers to tag chunks as section='outlook'.
+    Everything before the outlook section is tagged 'prepared_remarks'.
+    """
+    chunks: list[Chunk] = []
+    index = 0
+    current_section = "prepared_remarks"
+    current_text: list[str] = []
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Detect outlook section header (short line matching outlook keywords)
+        if len(stripped) < 120 and _OUTLOOK_HEADERS.match(stripped):
+            if current_text:
+                content = " ".join(current_text)
+                for chunk in chunk_text(content):
+                    chunk.section = current_section
+                    chunk.index = index
+                    chunks.append(chunk)
+                    index += 1
+                current_text = []
+            current_section = "outlook"
+            continue
+
+        current_text.append(stripped)
+
+    if current_text:
+        content = " ".join(current_text)
+        for chunk in chunk_text(content):
+            chunk.section = current_section
+            chunk.index = index
+            chunks.append(chunk)
+            index += 1
+
+    # If no outlook section was detected, tag the last 25% of chunks as outlook
+    if current_section == "prepared_remarks" and chunks:
+        cutoff = max(1, len(chunks) - len(chunks) // 4)
+        for chunk in chunks[cutoff:]:
+            chunk.section = "outlook"
+
+    return chunks
+
+
 def chunk_transcript(text: str) -> list[Chunk]:
     """
     Chunk an earnings transcript with speaker/section awareness.

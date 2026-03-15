@@ -437,9 +437,21 @@ def compute_earnings_quality_metrics(db: Session, ticker: str, limit: int = 12) 
     eps_total = eps_beats + eps_misses
     rev_total = rev_beats + rev_misses
 
+    # Most recent press release sentiment score
+    recent_sentiment = (
+        db.query(Transcript.sentiment_score)
+        .filter(
+            Transcript.ticker == ticker,
+            Transcript.sentiment_score.isnot(None),
+        )
+        .order_by(Transcript.fiscal_year.desc(), Transcript.fiscal_quarter.desc())
+        .scalar()
+    )
+
     return {
         "eps_beat_rate": round(eps_beats / eps_total * 100, 1) if eps_total > 0 else None,
         "revenue_beat_rate": round(rev_beats / rev_total * 100, 1) if rev_total > 0 else None,
         "avg_eps_surprise_pct": round(surprise_sum / surprise_count, 2) if surprise_count > 0 else None,
         "eps_beat_streak": streak if not streak_broken or streak > 0 else 0,
+        "sentiment_score": float(recent_sentiment) if recent_sentiment is not None else None,
     }

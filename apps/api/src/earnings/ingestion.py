@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 
 from src.earnings.models import Transcript
 from src.earnings.sec_edgar import extract_fiscal_period, fetch_earnings_8ks, fetch_exhibit_99_1
+from src.earnings.sentiment import score_outlook_sentiment
 from src.earnings.service import get_transcript, list_available_transcripts
-from src.rag.chunking import chunk_transcript
+from src.rag.chunking import chunk_press_release, chunk_transcript
 from src.rag.search import embed_transcript_chunks
 
 logger = logging.getLogger(__name__)
@@ -190,8 +191,8 @@ async def ingest_press_release_from_sec(
         db.add(transcript)
         db.flush()
 
-        # Chunk and embed
-        chunks = chunk_transcript(text)
+        # Chunk (press-release aware: detects outlook section) and embed
+        chunks = chunk_press_release(text)
         from src.earnings.models import TranscriptChunk
         for chunk in chunks:
             db.add(TranscriptChunk(
@@ -206,6 +207,9 @@ async def ingest_press_release_from_sec(
 
         embedded = await embed_transcript_chunks(db, transcript.id, db_path)
 
+        # Score sentiment from outlook section
+        sentiment = await score_outlook_sentiment(db, transcript.id)
+
         results.append({
             "status": "ingested",
             "ticker": ticker,
@@ -214,6 +218,8 @@ async def ingest_press_release_from_sec(
             "filing_date": filing_date,
             "chunks": len(transcript.chunks),
             "embedded": embedded,
+            "sentiment_score": sentiment.get("score") if sentiment else None,
+            "sentiment_label": sentiment.get("label") if sentiment else None,
         })
 
     return results
