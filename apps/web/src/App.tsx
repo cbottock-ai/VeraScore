@@ -9,7 +9,15 @@ import { EarningsPage } from '@/pages/Earnings'
 import { ChatPage } from '@/pages/Chat'
 import { SettingsPage } from '@/pages/Settings'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,  // 5 min — don't refetch on every navigation
+      gcTime: 10 * 60 * 1000,    // 10 min — keep in memory
+      retry: 1,
+    },
+  },
+})
 
 // Check if Clerk is configured
 const CLERK_ENABLED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY

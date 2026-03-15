@@ -151,6 +151,70 @@ export async function refreshPortfolio(
   return data
 }
 
+// --- Earnings ---
+
+export interface UpcomingEarning {
+  symbol: string
+  name: string | null
+  date: string
+  time: string | null
+  eps_estimated: number | null
+  revenue_estimated: number | null
+}
+
+export interface EarningsCalendarResponse {
+  from_date: string
+  to_date: string
+  earnings: UpcomingEarning[]
+}
+
+export interface EarningsRecord {
+  ticker: string
+  fiscal_date: string
+  fiscal_quarter: number | null
+  fiscal_year: number | null
+  eps_estimated: number | null
+  eps_actual: number | null
+  eps_surprise: number | null
+  eps_surprise_pct: number | null
+  revenue_estimated: number | null
+  revenue_actual: number | null
+  revenue_surprise_pct: number | null
+  report_time: string | null
+}
+
+export interface EarningsAnalysis {
+  ticker: string
+  total_quarters: number
+  eps_beats: number
+  eps_misses: number
+  eps_beat_rate: number | null
+  avg_eps_surprise_pct: number | null
+  revenue_beats: number
+  revenue_misses: number
+  revenue_beat_rate: number | null
+}
+
+export interface EarningsHistoryResponse {
+  ticker: string
+  earnings: EarningsRecord[]
+  analysis: EarningsAnalysis | null
+}
+
+export async function getEarningsCalendar(params?: {
+  from_date?: string
+  to_date?: string
+  tickers?: string
+}): Promise<EarningsCalendarResponse> {
+  const { data } = await api.get<EarningsCalendarResponse>('/earnings/calendar', { params })
+  return data
+}
+
+export async function getEarningsHistory(ticker: string, limit = 12): Promise<EarningsHistoryResponse> {
+  const { data } = await api.get<EarningsHistoryResponse>(`/earnings/${ticker}/history`, { params: { limit } })
+  return data
+}
+
 // --- Chat ---
 
 export async function listConversations(): Promise<ConversationSummary[]> {

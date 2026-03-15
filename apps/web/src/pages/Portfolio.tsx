@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   listPortfolios,
@@ -578,7 +579,12 @@ function HoldingRow({
             className={`px-4 py-3 font-mono ${getAlignment(col.format)} ${colorClass}`}
           >
             {col.id === 'ticker' ? (
-              <span className="font-semibold font-sans">{formatted}</span>
+              <Link
+                to={`/research/${formatted}`}
+                className="font-semibold font-sans text-primary hover:underline"
+              >
+                {formatted}
+              </Link>
             ) : (
               formatted
             )}

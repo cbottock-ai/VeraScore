@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.chat.routes import router as chat_router
+from src.earnings.routes import router as earnings_router
 from src.core.config import settings
 from src.core.database import Base, engine
 
@@ -53,6 +54,7 @@ app.include_router(stocks_router, prefix="/api")
 app.include_router(scoring_router, prefix="/api")
 app.include_router(portfolios_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
+app.include_router(earnings_router, prefix="/api")
 
 
 @app.get("/health")
