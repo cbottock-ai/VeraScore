@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getStock, getFundamentals, getScores, getEarningsCalendar, getEarningsHistory, listPortfolios, getPortfolio } from '@/services/api'
@@ -7,8 +8,6 @@ import { ScoreGauge, FactorBar, FactorCard } from '@/components/ScoreCard'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 
-// Notable companies to show in calendar when no watchlist
-const NOTABLE_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META', 'AMZN', 'TSLA', 'JPM', 'V', 'JNJ', 'WMT', 'UNH']
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -38,19 +37,39 @@ function BeatBadge({ pct }: { pct: number | null }) {
 // ─── Upcoming Earnings Calendar ──────────────────────────────────────────────
 
 function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: string[] }) {
-  // Merge watchlist with notable tickers, deduplicated
-  const combined = Array.from(new Set([...watchlistTickers, ...NOTABLE_TICKERS]))
-  const tickers = combined.join(',')
+  const [watchlistOnly, setWatchlistOnly] = useState(false)
+  const watchlistSet = new Set(watchlistTickers)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['earningsCalendar', tickers],
-    queryFn: () => getEarningsCalendar({ tickers }),
+    queryKey: ['earningsCalendar', 'all'],
+    queryFn: () => getEarningsCalendar(),
     staleTime: 5 * 60 * 1000,
   })
 
-  const earnings = data?.earnings ?? []
-  // Mark which are from watchlist
-  const watchlistSet = new Set(watchlistTickers)
+  const allEarnings = data?.earnings ?? []
+
+  // Group by date, sort watchlist to top within each day
+  const displayed = watchlistOnly
+    ? allEarnings.filter(e => watchlistSet.has(e.symbol))
+    : allEarnings
+
+  const byDate = displayed.reduce<Record<string, typeof displayed>>((acc, e) => {
+    acc[e.date] = acc[e.date] ?? []
+    acc[e.date].push(e)
+    return acc
+  }, {})
+  const sortedDates = Object.keys(byDate).sort()
+
+  // Within each date: watchlist first, then rest
+  for (const date of sortedDates) {
+    byDate[date].sort((a, b) => {
+      const aW = watchlistSet.has(a.symbol) ? 0 : 1
+      const bW = watchlistSet.has(b.symbol) ? 0 : 1
+      return aW - bW || a.symbol.localeCompare(b.symbol)
+    })
+  }
+
+  const totalCount = displayed.length
 
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -58,7 +77,19 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
           Upcoming Earnings · Next 14 Days
         </span>
-        {!isLoading && <span className="text-xs text-muted-foreground">{earnings.length} reports</span>}
+        <div className="flex items-center gap-3">
+          {!isLoading && <span className="text-xs text-muted-foreground">{totalCount} reports</span>}
+          <button
+            onClick={() => setWatchlistOnly(v => !v)}
+            className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+              watchlistOnly
+                ? 'border-primary bg-primary/15 text-primary'
+                : 'border-border text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Watchlist only
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -73,43 +104,38 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
             </div>
           ))}
         </div>
-      ) : earnings.length === 0 ? (
+      ) : sortedDates.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-          No major earnings in the next 14 days
+          {watchlistOnly ? 'No watchlist earnings in the next 14 days' : 'No earnings found'}
         </div>
       ) : (
-        <div className="divide-y divide-border/50">
-          {earnings.map((e, i) => (
-            <div key={i} className="px-4 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors group">
-              <div className="flex items-center gap-3">
-                <div>
+        <div>
+          {sortedDates.map(date => (
+            <div key={date}>
+              <div className="px-4 py-2 bg-muted/30 border-b border-border/50 sticky top-0">
+                <span className="text-xs font-semibold text-muted-foreground">{formatDate(date)}</span>
+              </div>
+              {byDate[date].map((e, i) => (
+                <div key={i} className="px-4 py-2.5 flex items-center justify-between hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
                   <div className="flex items-center gap-2">
-                    <Link
-                      to={`/research/${e.symbol}`}
-                      className="font-semibold text-sm font-mono text-primary hover:underline"
-                    >
+                    <Link to={`/research/${e.symbol}`} className="font-semibold text-sm font-mono text-primary hover:underline">
                       {e.symbol}
                     </Link>
                     {watchlistSet.has(e.symbol) && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium">
-                        Watchlist
-                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium">WL</span>
                     )}
                     {e.time && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
-                        {e.time === 'bmo' ? 'Pre-mkt' : e.time === 'amc' ? 'After-mkt' : e.time}
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        {e.time === 'bmo' ? 'Pre' : e.time === 'amc' ? 'Post' : e.time}
                       </span>
                     )}
+                    {e.name && <span className="text-xs text-muted-foreground truncate max-w-[180px] hidden sm:block">{e.name}</span>}
                   </div>
-                  {e.name && <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-[220px]">{e.name}</div>}
+                  {e.eps_estimated !== null && (
+                    <span className="text-xs text-muted-foreground font-mono">Est. ${e.eps_estimated.toFixed(2)}</span>
+                  )}
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm font-medium">{formatDate(e.date)}</div>
-                {e.eps_estimated !== null && (
-                  <div className="text-xs text-muted-foreground">Est. EPS ${e.eps_estimated.toFixed(2)}</div>
-                )}
-              </div>
+              ))}
             </div>
           ))}
         </div>
