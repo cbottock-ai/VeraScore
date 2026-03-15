@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getStock, getFundamentals, getScores, getEarningsCalendar, getEarningsHistory, listPortfolios, getPortfolio } from '@/services/api'
-import type { EarningsRecord } from '@/services/api'
+import type { EarningsRecord, UpcomingEarning } from '@/services/api'
 import { SP500_TICKERS } from '@/data/sp500'
 import { MetricCard } from '@/components/MetricCard'
 import { ScoreGauge, FactorBar, FactorCard } from '@/components/ScoreCard'
@@ -60,7 +60,46 @@ function TickerLogo({ symbol }: { symbol: string }) {
   )
 }
 
-// ─── Upcoming Earnings Calendar ──────────────────────────────────────────────
+// ─── Earnings Calendar helpers ───────────────────────────────────────────────
+
+function toISO(d: Date) { return d.toISOString().split('T')[0] }
+
+function currentWeekBounds() {
+  const today = new Date()
+  const dow = today.getDay()
+  const mon = new Date(today)
+  mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1))
+  const fri = new Date(mon)
+  fri.setDate(mon.getDate() + 4)
+  return { from: toISO(mon), to: toISO(fri) }
+}
+
+function getMonthBounds(d: Date) {
+  return {
+    from: toISO(new Date(d.getFullYear(), d.getMonth(), 1)),
+    to: toISO(new Date(d.getFullYear(), d.getMonth() + 1, 0)),
+  }
+}
+
+function getMonthWeeks(year: number, month: number) {
+  const first = new Date(year, month, 1)
+  const last = new Date(year, month + 1, 0)
+  const firstDow = first.getDay()
+  const cur = new Date(first)
+  cur.setDate(first.getDate() - (firstDow === 0 ? 6 : firstDow - 1))
+  const weeks: Array<Array<{ date: string; day: number; inMonth: boolean }>> = []
+  while (cur <= last) {
+    const week = []
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(cur)
+      d.setDate(cur.getDate() + i)
+      week.push({ date: toISO(d), day: d.getDate(), inMonth: d.getMonth() === month && d.getFullYear() === year })
+    }
+    weeks.push(week)
+    cur.setDate(cur.getDate() + 7)
+  }
+  return weeks
+}
 
 function dayLabel(dateStr: string) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -70,136 +109,228 @@ function dayLabel(dateStr: string) {
   }
 }
 
-function isWeekend(dateStr: string) {
-  const day = new Date(dateStr + 'T00:00:00').getDay()
-  return day === 0 || day === 6
-}
+// ─── Upcoming Earnings Calendar ──────────────────────────────────────────────
 
 function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: string[] }) {
   const [watchlistOnly, setWatchlistOnly] = useState(false)
-  const watchlistSet = new Set(watchlistTickers)
+  const [viewMonth, setViewMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['earningsCalendar', 'all'],
-    queryFn: () => getEarningsCalendar(),
+  const watchlistSet = useMemo(() => new Set(watchlistTickers), [watchlistTickers])
+  const todayStr = useMemo(() => toISO(new Date()), [])
+  const { from: weekFrom, to: weekTo } = useMemo(() => currentWeekBounds(), [])
+  const { from: monthFrom, to: monthTo } = useMemo(() => getMonthBounds(viewMonth), [viewMonth])
+
+  const weekQuery = useQuery({
+    queryKey: ['earningsCalendar', weekFrom, weekTo],
+    queryFn: () => getEarningsCalendar({ from_date: weekFrom, to_date: weekTo }),
+    staleTime: 5 * 60 * 1000,
+  })
+  const monthQuery = useQuery({
+    queryKey: ['earningsCalendar', monthFrom, monthTo],
+    queryFn: () => getEarningsCalendar({ from_date: monthFrom, to_date: monthTo }),
     staleTime: 5 * 60 * 1000,
   })
 
-  const allEarnings = data?.earnings ?? []
-  const relevant = allEarnings.filter(e => SP500_TICKERS.has(e.symbol) || watchlistSet.has(e.symbol))
-  const displayed = watchlistOnly ? relevant.filter(e => watchlistSet.has(e.symbol)) : relevant
-
-  const byDate = displayed.reduce<Record<string, typeof displayed>>((acc, e) => {
-    if (!isWeekend(e.date)) {
-      acc[e.date] = acc[e.date] ?? []
-      acc[e.date].push(e)
+  function filterAndGroup(earnings: UpcomingEarning[]) {
+    const relevant = earnings.filter(e => SP500_TICKERS.has(e.symbol) || watchlistSet.has(e.symbol))
+    const filtered = watchlistOnly ? relevant.filter(e => watchlistSet.has(e.symbol)) : relevant
+    const byDate: Record<string, UpcomingEarning[]> = {}
+    for (const e of filtered) {
+      byDate[e.date] = byDate[e.date] ?? []
+      byDate[e.date].push(e)
     }
-    return acc
-  }, {})
-
-  const sortedDates = Object.keys(byDate).sort()
-  for (const date of sortedDates) {
-    byDate[date].sort((a, b) => {
-      const aW = watchlistSet.has(a.symbol) ? 0 : 1
-      const bW = watchlistSet.has(b.symbol) ? 0 : 1
-      return aW - bW || a.symbol.localeCompare(b.symbol)
-    })
+    for (const date of Object.keys(byDate)) {
+      byDate[date].sort((a, b) => {
+        const aW = watchlistSet.has(a.symbol) ? 0 : 1
+        const bW = watchlistSet.has(b.symbol) ? 0 : 1
+        return aW - bW || a.symbol.localeCompare(b.symbol)
+      })
+    }
+    return byDate
   }
 
+  const weekByDate = useMemo(() => filterAndGroup(weekQuery.data?.earnings ?? []), [weekQuery.data, watchlistOnly, watchlistSet])
+  const monthByDate = useMemo(() => filterAndGroup(monthQuery.data?.earnings ?? []), [monthQuery.data, watchlistOnly, watchlistSet])
+  const weekDates = Object.keys(weekByDate).sort()
+  const monthWeeks = useMemo(() => getMonthWeeks(viewMonth.getFullYear(), viewMonth.getMonth()), [viewMonth])
+  const monthName = viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const weekReportCount = weekDates.reduce((n, d) => n + weekByDate[d].length, 0)
+
+  const WatchlistToggle = (
+    <button
+      onClick={() => setWatchlistOnly(v => !v)}
+      className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+        watchlistOnly ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      Watchlist only
+    </button>
+  )
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-base font-semibold">Earnings Calendar</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">S&P 500 · Next 14 days</p>
+    <div className="space-y-8">
+
+      {/* ── This Week ─────────────────────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-base font-semibold">This Week</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">S&P 500 · {weekFrom} – {weekTo}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {!weekQuery.isLoading && <span className="text-xs text-muted-foreground">{weekReportCount} reports</span>}
+            {WatchlistToggle}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          {!isLoading && (
-            <span className="text-xs text-muted-foreground">
-              {displayed.length} reports
-            </span>
-          )}
-          <button
-            onClick={() => setWatchlistOnly(v => !v)}
-            className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
-              watchlistOnly
-                ? 'border-primary bg-primary/15 text-primary'
-                : 'border-border text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Watchlist only
-          </button>
-        </div>
+
+        {weekQuery.isLoading ? (
+          <div className="flex gap-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex-1 min-w-36 rounded-xl border border-border bg-card p-3 space-y-2">
+                <Skeleton className="h-4 w-16 mx-auto" />
+                <Skeleton className="h-10 w-full rounded-lg" />
+                <Skeleton className="h-10 w-full rounded-lg" />
+                <Skeleton className="h-10 w-3/4 rounded-lg" />
+              </div>
+            ))}
+          </div>
+        ) : weekDates.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            {watchlistOnly ? 'No watchlist earnings this week' : 'No S&P 500 earnings this week'}
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            {weekDates.map(date => {
+              const { weekday, date: dateLabel } = dayLabel(date)
+              const items = weekByDate[date]
+              const isPast = date < todayStr
+              return (
+                <div key={date} className={`flex-1 min-w-36 rounded-xl border bg-card overflow-hidden transition-opacity ${isPast ? 'opacity-50' : ''} ${date === todayStr ? 'border-primary/40' : 'border-border'}`}>
+                  <div className={`px-3 py-2.5 border-b text-center ${date === todayStr ? 'bg-primary/10 border-primary/30' : 'bg-muted/30 border-border'}`}>
+                    <div className="text-xs font-bold text-foreground uppercase tracking-wide">{weekday}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{dateLabel}</div>
+                  </div>
+                  <div className="p-2 space-y-1.5">
+                    {items.map((e, i) => {
+                      const isWL = watchlistSet.has(e.symbol)
+                      return (
+                        <Link
+                          key={i}
+                          to={`/research/${e.symbol}`}
+                          className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${
+                            isWL ? 'bg-primary/10 border border-primary/30 hover:bg-primary/15' : 'bg-muted/50 border border-transparent hover:bg-muted'
+                          }`}
+                        >
+                          <TickerLogo symbol={e.symbol} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className={`text-xs font-bold font-mono leading-none ${isWL ? 'text-primary' : 'text-foreground'}`}>{e.symbol}</span>
+                              {e.time && (
+                                <span className="text-[9px] text-muted-foreground font-medium leading-none shrink-0">
+                                  {e.time === 'bmo' ? '▲' : e.time === 'amc' ? '▼' : ''}
+                                </span>
+                              )}
+                            </div>
+                            {e.name && <div className="text-[10px] text-muted-foreground truncate mt-0.5 leading-tight">{e.name}</div>}
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {isLoading ? (
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex-1 min-w-36 rounded-xl border border-border bg-card p-3 space-y-2">
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-8 w-full rounded-lg" />
-              <Skeleton className="h-8 w-full rounded-lg" />
-              <Skeleton className="h-8 w-3/4 rounded-lg" />
-            </div>
-          ))}
+      {/* ── Monthly Calendar ──────────────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold">{monthName}</h2>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              className="w-7 h-7 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >‹</button>
+            <button
+              onClick={() => setViewMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+              className="px-2.5 h-7 text-xs rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors font-medium"
+            >Today</button>
+            <button
+              onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              className="w-7 h-7 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >›</button>
+          </div>
         </div>
-      ) : sortedDates.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
-          {watchlistOnly ? 'No watchlist earnings in the next 14 days' : 'No S&P 500 earnings found'}
-        </div>
-      ) : (
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {sortedDates.map(date => {
-            const { weekday, date: dateLabel } = dayLabel(date)
-            const items = byDate[date]
-            return (
-              <div key={date} className="flex-1 min-w-36 rounded-xl border border-border bg-card overflow-hidden">
-                {/* Day header */}
-                <div className="px-3 py-2.5 border-b border-border bg-muted/30 text-center">
-                  <div className="text-xs font-bold text-foreground uppercase tracking-wide">{weekday}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{dateLabel}</div>
+
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          {/* Day headers */}
+          <div className="grid grid-cols-5 border-b border-border bg-muted/30">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => (
+              <div key={d} className="py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-r border-border/50 last:border-0">
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {monthQuery.isLoading ? (
+            <div className="grid grid-cols-5 divide-x divide-border/50">
+              {Array.from({ length: 25 }).map((_, i) => (
+                <div key={i} className="p-2 min-h-[88px] border-b border-border/40">
+                  <Skeleton className="h-4 w-5 mb-2 rounded-full" />
+                  <Skeleton className="h-4 w-full rounded mb-1" />
+                  <Skeleton className="h-4 w-3/4 rounded" />
                 </div>
-                {/* Ticker chips */}
-                <div className="p-2 space-y-1.5">
-                  {items.map((e, i) => {
-                    const isWL = watchlistSet.has(e.symbol)
+              ))}
+            </div>
+          ) : (
+            <div>
+              {monthWeeks.map((week, wi) => (
+                <div key={wi} className="grid grid-cols-5 border-b border-border/40 last:border-0">
+                  {week.map(({ date, day, inMonth }) => {
+                    const items = monthByDate[date] ?? []
+                    const isToday = date === todayStr
+                    const VISIBLE = 3
                     return (
-                      <Link
-                        key={i}
-                        to={`/research/${e.symbol}`}
-                        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors group ${
-                          isWL
-                            ? 'bg-primary/10 border border-primary/30 hover:bg-primary/15'
-                            : 'bg-muted/50 border border-transparent hover:bg-muted'
-                        }`}
+                      <div
+                        key={date}
+                        className={`p-2 min-h-[88px] border-r border-border/40 last:border-0 ${!inMonth ? 'bg-muted/15' : ''}`}
                       >
-                        <TickerLogo symbol={e.symbol} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className={`text-xs font-bold font-mono leading-none ${isWL ? 'text-primary' : 'text-foreground'}`}>
-                              {e.symbol}
-                            </span>
-                            {e.time && (
-                              <span className="text-[9px] text-muted-foreground font-medium leading-none shrink-0">
-                                {e.time === 'bmo' ? '▲' : e.time === 'amc' ? '▼' : ''}
-                              </span>
-                            )}
-                          </div>
-                          {e.name && (
-                            <div className="text-[10px] text-muted-foreground truncate mt-0.5 leading-tight">
-                              {e.name}
-                            </div>
+                        <span className={`text-xs font-semibold inline-flex items-center justify-center w-5 h-5 rounded-full ${
+                          isToday ? 'bg-primary text-primary-foreground' : inMonth ? 'text-foreground' : 'text-muted-foreground/30'
+                        }`}>
+                          {day}
+                        </span>
+                        <div className="mt-1 space-y-0.5">
+                          {items.slice(0, VISIBLE).map((e, i) => {
+                            const isWL = watchlistSet.has(e.symbol)
+                            return (
+                              <Link
+                                key={i}
+                                to={`/research/${e.symbol}`}
+                                className={`block text-[10px] font-mono font-bold px-1.5 py-0.5 rounded truncate transition-colors ${
+                                  isWL ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted text-foreground/70 hover:text-foreground'
+                                }`}
+                              >
+                                {e.symbol}
+                              </Link>
+                            )
+                          })}
+                          {items.length > VISIBLE && (
+                            <span className="text-[10px] text-muted-foreground px-1 leading-none">+{items.length - VISIBLE}</span>
                           )}
                         </div>
-                      </Link>
+                      </div>
                     )
                   })}
                 </div>
-              </div>
-            )
-          })}
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
+
     </div>
   )
 }
