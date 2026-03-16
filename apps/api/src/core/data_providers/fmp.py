@@ -273,6 +273,45 @@ async def fmp_batch_quote(symbols: list[str]) -> list[dict]:
     return results
 
 
+async def fmp_screener(
+    market_cap_min: int | None = None,
+    market_cap_max: int | None = None,
+    sector: str | None = None,
+    exchange: str | None = None,
+    country: str = "US",
+    limit: int = 250,
+    offset: int = 0,
+) -> list[dict]:
+    """Screen stocks by market cap, sector, exchange. Returns up to 250 results."""
+    if not settings.fmp_api_key:
+        return []
+    params: dict[str, Any] = {
+        "apikey": settings.fmp_api_key,
+        "country": country,
+        "isEtf": "false",
+        "isActivelyTrading": "true",
+        "limit": limit,
+        "offset": offset,
+    }
+    if market_cap_min is not None:
+        params["marketCapMoreThan"] = market_cap_min
+    if market_cap_max is not None:
+        params["marketCapLessThan"] = market_cap_max
+    if sector:
+        params["sector"] = sector
+    if exchange:
+        params["exchange"] = exchange
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/company-screener",
+            params=params,
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+
 async def fmp_earnings_historical(ticker: str, limit: int = 20) -> list[dict]:
     """
     Get historical earnings data for a stock.

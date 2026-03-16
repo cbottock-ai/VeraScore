@@ -294,6 +294,41 @@ export async function sendMessage(
   }
 }
 
+// --- Screener ---
+
+export interface ScreenerResult {
+  symbol: string
+  name: string | null
+  market_cap: number | null
+  sector: string | null
+  industry: string | null
+  price: number | null
+  beta: number | null
+  volume: number | null
+  exchange: string | null
+  country: string | null
+}
+
+export interface ScreenerResponse {
+  results: ScreenerResult[]
+  offset: number
+  limit: number
+  count: number
+}
+
+export async function runScreener(params: {
+  market_cap_min?: number
+  market_cap_max?: number
+  sector?: string
+  exchange?: string
+  country?: string
+  limit?: number
+  offset?: number
+}): Promise<ScreenerResponse> {
+  const { data } = await api.get<ScreenerResponse>('/screener', { params })
+  return data
+}
+
 export async function getProvider(): Promise<LLMProviderInfo> {
   const { data } = await api.get<LLMProviderInfo>('/chat/provider')
   return data
