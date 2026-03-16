@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getStock, getFundamentals, getScores, getEarningsCalendar, getEarningsHistory, listPortfolios, getPortfolio } from '@/services/api'
 import type { EarningsRecord, UpcomingEarning } from '@/services/api'
@@ -244,7 +244,7 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
                       return (
                         <Link
                           key={i}
-                          to={`/research/${e.symbol}`}
+                          to={`/research/stock/${e.symbol}`}
                           className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${
                             isWL ? 'bg-primary/10 border border-primary/30 hover:bg-primary/15' : 'bg-muted/50 border border-transparent hover:bg-muted'
                           }`}
@@ -336,7 +336,7 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
                             return (
                               <Link
                                 key={i}
-                                to={`/research/${e.symbol}`}
+                                to={`/research/stock/${e.symbol}`}
                                 className={`flex items-center gap-1 rounded py-0.5 px-1 transition-colors ${
                                   isWL ? 'bg-primary/15 hover:bg-primary/25' : 'bg-muted hover:bg-muted/80'
                                 }`}
@@ -443,11 +443,101 @@ function EarningsHistorySection({ ticker }: { ticker: string }) {
   )
 }
 
-// ─── Page ────────────────────────────────────────────────────────────────────
+// ─── Research Landing Page ───────────────────────────────────────────────────
 
-export function ResearchPage() {
-  const { ticker } = useParams()
+const RESEARCH_SECTIONS = [
+  {
+    to: '/research/earnings',
+    label: 'Earnings Calendar',
+    description: 'Upcoming S&P 500 earnings with weekly and monthly views',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+      </svg>
+    ),
+  },
+  {
+    to: '/research/screener',
+    label: 'Stock Screener',
+    description: 'Filter S&P 500 by VeraScore, valuation, growth, and more',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/research/sectors',
+    label: 'Sectors',
+    description: 'Sector performance, rotation, and market heat maps',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
+      </svg>
+    ),
+  },
+  {
+    to: '/research/analyst-ratings',
+    label: 'Analyst Ratings',
+    description: 'Recent upgrades, downgrades, and price target changes',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/research/insider-activity',
+    label: 'Insider Activity',
+    description: 'Insider buys and sells across S&P 500 companies',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/research/learning',
+    label: 'Learning',
+    description: 'Key investing concepts — earnings, valuation, and more',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5" />
+      </svg>
+    ),
+  },
+]
 
+export function ResearchLandingPage() {
+  const navigate = useNavigate()
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold">Research</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Tools and data to inform better investment decisions</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {RESEARCH_SECTIONS.map(s => (
+          <button
+            key={s.to}
+            onClick={() => navigate(s.to)}
+            className="group text-left rounded-xl border border-border bg-card p-5 hover:border-primary/40 hover:bg-primary/5 transition-all duration-150"
+          >
+            <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center mb-4 group-hover:bg-primary/15 transition-colors">
+              {s.icon}
+            </div>
+            <div className="text-sm font-semibold mb-1">{s.label}</div>
+            <div className="text-xs text-muted-foreground leading-relaxed">{s.description}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Earnings sub-page ───────────────────────────────────────────────────────
+
+export function EarningsResearchPage() {
   const { data: portfoliosData } = useQuery({
     queryKey: ['portfolios'],
     queryFn: listPortfolios,
@@ -461,6 +551,21 @@ export function ResearchPage() {
     staleTime: 5 * 60 * 1000,
   })
   const watchlistTickers = portfolioDetail?.holdings?.map(h => h.ticker) ?? []
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-semibold">Earnings Calendar</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">S&P 500 · upcoming reports</p>
+      </div>
+      <UpcomingEarningsCalendar watchlistTickers={watchlistTickers} />
+    </div>
+  )
+}
+
+// ─── Stock page ───────────────────────────────────────────────────────────────
+
+export function StockResearchPage() {
+  const { ticker } = useParams()
 
   const stockQuery = useQuery({
     queryKey: ['stock', ticker],
@@ -479,19 +584,6 @@ export function ResearchPage() {
     queryFn: () => getFundamentals(ticker!),
     enabled: !!ticker,
   })
-
-  // ── No ticker selected: show earnings calendar ───────────────────────────
-  if (!ticker) {
-    return (
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-xl font-semibold">Research</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Search a ticker in the header to view scores and analysis</p>
-        </div>
-        <UpcomingEarningsCalendar watchlistTickers={watchlistTickers} />
-      </div>
-    )
-  }
 
   const stock = stockQuery.data
   const scores = scoresQuery.data

@@ -580,7 +580,7 @@ function HoldingRow({
           >
             {col.id === 'ticker' ? (
               <Link
-                to={`/research/${formatted}`}
+                to={`/research/stock/${formatted}`}
                 className="font-semibold font-sans text-primary hover:underline"
               >
                 {formatted}

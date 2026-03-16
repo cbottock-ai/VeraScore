@@ -48,7 +48,7 @@ export function StockSearch() {
   function handleSelect(ticker: string) {
     setQuery('')
     setIsOpen(false)
-    navigate(`/research/${ticker}`)
+    navigate(`/research/stock/${ticker}`)
   }
 
   return (

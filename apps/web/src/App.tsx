@@ -4,36 +4,49 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Layout } from '@/components/Layout'
 import { DashboardPage } from '@/pages/Dashboard'
 import { PortfolioPage } from '@/pages/Portfolio'
-import { ResearchPage } from '@/pages/Research'
+import { ResearchLandingPage, EarningsResearchPage, StockResearchPage } from '@/pages/Research'
+import { ScreenerPage } from '@/pages/research/Screener'
+import { SectorsPage } from '@/pages/research/Sectors'
+import { AnalystRatingsPage } from '@/pages/research/AnalystRatings'
+import { InsiderActivityPage } from '@/pages/research/InsiderActivity'
+import { LearningPage } from '@/pages/research/Learning'
 import { ChatPage } from '@/pages/Chat'
 import { SettingsPage } from '@/pages/Settings'
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,  // 5 min — don't refetch on every navigation
-      gcTime: 10 * 60 * 1000,    // 10 min — keep in memory
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       retry: 1,
     },
   },
 })
 
-// Check if Clerk is configured
 const CLERK_ENABLED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-
-// Lazy load Clerk components only when needed
 const ClerkAuthWrapper = lazy(() => import('@/components/ClerkAuthWrapper'))
 
-// Routes component to avoid duplication
 function AppRoutes() {
   return (
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/watchlist" element={<PortfolioPage />} />
-        <Route path="/research" element={<ResearchPage />} />
-        <Route path="/research/:ticker" element={<ResearchPage />} />
-        <Route path="/earnings" element={<Navigate to="/research" replace />} />
+
+        {/* Research section */}
+        <Route path="/research" element={<ResearchLandingPage />} />
+        <Route path="/research/earnings" element={<EarningsResearchPage />} />
+        <Route path="/research/screener" element={<ScreenerPage />} />
+        <Route path="/research/sectors" element={<SectorsPage />} />
+        <Route path="/research/analyst-ratings" element={<AnalystRatingsPage />} />
+        <Route path="/research/insider-activity" element={<InsiderActivityPage />} />
+        <Route path="/research/learning" element={<LearningPage />} />
+        <Route path="/research/stock/:ticker" element={<StockResearchPage />} />
+
+        {/* Legacy redirects */}
+        <Route path="/research/:ticker" element={<Navigate to="/research" replace />} />
+        <Route path="/earnings" element={<Navigate to="/research/earnings" replace />} />
+
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

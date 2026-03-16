@@ -170,7 +170,7 @@ export function DashboardPage() {
               <MoversRow
                 key={quote.symbol}
                 quote={quote}
-                onClick={() => navigate(`/research/${quote.symbol}`)}
+                onClick={() => navigate(`/research/stock/${quote.symbol}`)}
               />
             ))
           )}

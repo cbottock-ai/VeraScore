@@ -1,10 +1,19 @@
-import { lazy, Suspense } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { lazy, Suspense, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { StockSearch } from '@/components/StockSearch'
 
 const CLERK_ENABLED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 const ClerkUserButton = lazy(() => import('@/components/ClerkUserButton').then(m => ({ default: m.ClerkUserButton })))
+
+const RESEARCH_SUB_ITEMS = [
+  { to: '/research/earnings', label: 'Earnings' },
+  { to: '/research/screener', label: 'Screener' },
+  { to: '/research/sectors', label: 'Sectors' },
+  { to: '/research/analyst-ratings', label: 'Analyst Ratings' },
+  { to: '/research/insider-activity', label: 'Insider Activity' },
+  { to: '/research/learning', label: 'Learning' },
+]
 
 const mainNavItems = [
   {
@@ -23,15 +32,6 @@ const mainNavItems = [
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
-  },
-  {
-    to: '/research',
-    label: 'Research',
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
       </svg>
     ),
   },
@@ -87,6 +87,75 @@ function NavItem({ to, label, icon, end }: { to: string; label: string; icon: Re
   )
 }
 
+function ResearchNavGroup() {
+  const location = useLocation()
+  const inResearch = location.pathname.startsWith('/research')
+  const [open, setOpen] = useState(inResearch)
+
+  const isRootActive = location.pathname === '/research'
+
+  return (
+    <div>
+      {/* Research parent row */}
+      <div className="flex items-center mb-0.5">
+        <NavLink
+          to="/research"
+          end
+          className={`group flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 relative ${
+            isRootActive
+              ? 'bg-primary/15 text-primary'
+              : 'text-sidebar-foreground/60 hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground'
+          }`}
+        >
+          {isRootActive && (
+            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
+          )}
+          <span className={`transition-colors ${isRootActive ? 'text-primary' : 'text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80'}`}>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+          </span>
+          Research
+        </NavLink>
+        {/* Chevron toggle */}
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="p-1.5 mr-1 rounded text-sidebar-foreground/40 hover:text-sidebar-foreground/70 transition-colors"
+          aria-label="Toggle research menu"
+        >
+          <svg
+            className={`w-3 h-3 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Sub-items */}
+      {open && (
+        <div className="ml-3 pl-3 border-l border-sidebar-border/50 mb-1">
+          {RESEARCH_SUB_ITEMS.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `block px-2 py-1.5 rounded-md text-xs font-medium transition-colors mb-0.5 ${
+                  isActive
+                    ? 'text-primary bg-primary/10'
+                    : 'text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-foreground/8'
+                }`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Layout() {
   return (
     <div className="min-h-screen bg-background text-foreground flex">
@@ -109,6 +178,7 @@ export function Layout() {
             {mainNavItems.map((item) => (
               <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} end={item.to === '/'} />
             ))}
+            <ResearchNavGroup />
           </div>
         </nav>
 

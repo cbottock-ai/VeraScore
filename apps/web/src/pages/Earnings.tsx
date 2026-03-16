@@ -89,7 +89,7 @@ export function EarningsPage() {
                       <div>
                         <div className="flex items-center gap-2">
                           <Link
-                            to={`/research/${e.symbol}`}
+                            to={`/research/stock/${e.symbol}`}
                             className="font-semibold text-sm font-mono text-primary hover:underline"
                           >
                             {e.symbol}
