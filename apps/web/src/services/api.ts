@@ -337,6 +337,52 @@ export async function runScreener(params: {
   return data
 }
 
+// --- Market Data ---
+
+export interface SectorPerformance {
+  sector: string
+  changes_pct: number | null
+}
+
+export async function getSectorPerformance(): Promise<SectorPerformance[]> {
+  const { data } = await api.get<{ sectors: SectorPerformance[] }>('/market/sectors')
+  return data.sectors
+}
+
+export interface AnalystRating {
+  symbol: string
+  name: string | null
+  published_date: string | null
+  action: string | null
+  rating_from: string | null
+  rating_to: string | null
+  price_target: number | null
+  price_target_from: number | null
+  firm: string | null
+}
+
+export async function getAnalystRatings(limit = 100): Promise<AnalystRating[]> {
+  const { data } = await api.get<{ ratings: AnalystRating[] }>('/market/analyst-ratings', { params: { limit } })
+  return data.ratings
+}
+
+export interface InsiderTrade {
+  symbol: string
+  filing_date: string | null
+  transaction_date: string | null
+  insider_name: string | null
+  title: string | null
+  transaction_type: string | null
+  shares: number | null
+  price: number | null
+  value: number | null
+}
+
+export async function getInsiderTrades(params?: { limit?: number; transaction_type?: string }): Promise<InsiderTrade[]> {
+  const { data } = await api.get<{ trades: InsiderTrade[] }>('/market/insider-trades', { params })
+  return data.trades
+}
+
 export async function getProvider(): Promise<LLMProviderInfo> {
   const { data } = await api.get<LLMProviderInfo>('/chat/provider')
   return data

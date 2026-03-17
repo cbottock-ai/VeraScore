@@ -467,3 +467,55 @@ async def fmp_analyst_estimates(ticker: str, limit: int = 10) -> list[dict]:
         )
         resp.raise_for_status()
         return resp.json()
+
+
+async def fmp_sector_performance() -> list[dict]:
+    """Get current sector performance (% change)."""
+    if not settings.fmp_api_key:
+        return []
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/sector-performance",
+            params={"apikey": settings.fmp_api_key},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+
+async def fmp_upgrades_downgrades(limit: int = 100) -> list[dict]:
+    """Get recent analyst upgrades, downgrades, and initiations."""
+    if not settings.fmp_api_key:
+        return []
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/upgrades-downgrades-rss-feed",
+            params={"page": 0, "apikey": settings.fmp_api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, list):
+            return data[:limit]
+        return []
+
+
+async def fmp_insider_trading(limit: int = 100, transaction_type: str | None = None) -> list[dict]:
+    """Get recent insider trading transactions."""
+    if not settings.fmp_api_key:
+        return []
+    params: dict[str, Any] = {"page": 0, "apikey": settings.fmp_api_key}
+    if transaction_type:
+        params["transactionType"] = transaction_type
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/insider-trading",
+            params=params,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, list):
+            return data[:limit]
+        return []

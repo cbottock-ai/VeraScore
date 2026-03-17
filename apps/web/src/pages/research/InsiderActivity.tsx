@@ -1,13 +1,201 @@
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getInsiderTrades } from '@/services/api'
+import type { InsiderTrade } from '@/services/api'
+
+type TxFilter = 'all' | 'buy' | 'sell'
+
+function isBuy(t: InsiderTrade): boolean {
+  const tx = (t.transaction_type ?? '').toLowerCase()
+  return tx.includes('purchase') || tx === 'p' || tx.includes('buy') || tx === 'a'
+}
+
+function isSell(t: InsiderTrade): boolean {
+  const tx = (t.transaction_type ?? '').toLowerCase()
+  return tx.includes('sale') || tx === 's' || tx.includes('sell')
+}
+
+function txBadge(t: InsiderTrade) {
+  if (isBuy(t)) return { cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400', label: 'Buy' }
+  if (isSell(t)) return { cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400', label: 'Sell' }
+  return { cls: 'bg-muted text-muted-foreground', label: t.transaction_type ?? '—' }
+}
+
+function fmtDate(s: string | null): string {
+  if (!s) return '—'
+  const d = new Date(s)
+  if (isNaN(d.getTime())) return s.slice(0, 10)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function fmtNum(n: number | null): string {
+  if (n === null) return '—'
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`
+  return `$${n.toFixed(0)}`
+}
+
+function fmtShares(n: number | null): string {
+  if (n === null) return '—'
+  return Math.abs(n).toLocaleString()
+}
+
+function fmtPrice(n: number | null): string {
+  if (n === null) return '—'
+  return `$${n.toFixed(2)}`
+}
+
 export function InsiderActivityPage() {
+  const [txFilter, setTxFilter] = useState<TxFilter>('all')
+  const [search, setSearch] = useState('')
+
+  const { data: trades = [], isLoading, isError } = useQuery<InsiderTrade[]>({
+    queryKey: ['insiderTrades'],
+    queryFn: () => getInsiderTrades({ limit: 200 }),
+    staleTime: 10 * 60 * 1000,
+  })
+
+  const filtered = useMemo(() => {
+    let rows = trades
+    if (txFilter === 'buy') rows = rows.filter(isBuy)
+    if (txFilter === 'sell') rows = rows.filter(isSell)
+    if (search.trim()) {
+      const q = search.trim().toUpperCase()
+      rows = rows.filter(
+        (r) =>
+          r.symbol?.toUpperCase().includes(q) ||
+          r.insider_name?.toUpperCase().includes(q),
+      )
+    }
+    return rows
+  }, [trades, txFilter, search])
+
+  const summary = useMemo(() => {
+    const buyVal = trades.filter(isBuy).reduce((s, t) => s + (t.value ?? 0), 0)
+    const sellVal = trades.filter(isSell).reduce((s, t) => s + (t.value ?? 0), 0)
+    const buyCount = trades.filter(isBuy).length
+    const sellCount = trades.filter(isSell).length
+    return { buyVal, sellVal, buyCount, sellCount }
+  }, [trades])
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold">Insider Activity</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Insider buys and sells across S&P 500 companies</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Recent insider buys and sells across publicly traded companies</p>
       </div>
-      <div className="rounded-xl border border-dashed border-border p-16 text-center text-sm text-muted-foreground">
-        Coming soon
+
+      {/* Summary cards */}
+      {!isLoading && trades.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-border p-4">
+            <div className="text-xs text-muted-foreground mb-1">Insider Buys</div>
+            <div className="text-2xl font-bold text-emerald-600">{fmtNum(summary.buyVal)}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{summary.buyCount} transactions</div>
+          </div>
+          <div className="rounded-xl border border-border p-4">
+            <div className="text-xs text-muted-foreground mb-1">Insider Sells</div>
+            <div className="text-2xl font-bold text-red-500">{fmtNum(summary.sellVal)}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{summary.sellCount} transactions</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 rounded-lg border border-border p-1">
+          {(['all', 'buy', 'sell'] as TxFilter[]).map((k) => (
+            <button
+              key={k}
+              onClick={() => setTxFilter(k)}
+              className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors ${
+                txFilter === k
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {k === 'all' ? 'All' : k === 'buy' ? 'Buys' : 'Sells'}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          placeholder="Search ticker or insider…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="border border-border rounded-lg px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring w-56"
+        />
       </div>
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-10 rounded-lg bg-muted animate-pulse" />
+          ))}
+        </div>
+      )}
+
+      {isError && (
+        <div className="rounded-xl border border-dashed border-border p-16 text-center text-sm text-muted-foreground">
+          Unable to load insider data. This may require a premium FMP plan.
+        </div>
+      )}
+
+      {!isLoading && !isError && (
+        <div className="rounded-xl border border-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/40">
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Date</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Ticker</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Insider</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Title</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Type</th>
+                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Shares</th>
+                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Price</th>
+                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="text-center py-12 text-muted-foreground">
+                    No transactions match your filters.
+                  </td>
+                </tr>
+              )}
+              {filtered.map((t, i) => {
+                const { cls, label } = txBadge(t)
+                return (
+                  <tr key={i} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
+                      {fmtDate(t.transaction_date ?? t.filing_date)}
+                    </td>
+                    <td className="px-4 py-2.5 font-medium">
+                      <a
+                        href={`/research/stock/${t.symbol}`}
+                        className="hover:text-primary transition-colors"
+                      >
+                        {t.symbol}
+                      </a>
+                    </td>
+                    <td className="px-4 py-2.5 max-w-36 truncate">{t.insider_name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs max-w-32 truncate">{t.title ?? '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
+                        {label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{fmtShares(t.shares)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{fmtPrice(t.price)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-medium">{fmtNum(t.value)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
