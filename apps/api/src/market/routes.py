@@ -1,11 +1,12 @@
 import asyncio
-from datetime import date, timedelta
+import time
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query
 from src.core.data_providers.fmp import (
     fmp_batch_quote,
     fmp_historical_price_light,
-    fmp_grades_batch,
+    fmp_grades,
     fmp_insider_trading,
 )
 
@@ -101,25 +102,109 @@ async def sector_history(
     }
 
 
-DEFAULT_ANALYST_SYMBOLS = [
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "JPM", "LLY",
-    "V", "UNH", "XOM", "MA", "JNJ", "PG", "HD", "COST", "WMT", "NFLX",
-    "BAC", "CRM", "ORCL", "AMD", "ABBV", "KO", "CVX", "MRK", "PEP", "ADBE",
-    "TMO", "ACN", "CSCO", "LIN", "MCD", "QCOM", "TXN", "GE", "DHR", "INTU",
-    "AMGN", "IBM", "CAT", "SPGI", "BKNG", "ISRG", "GS", "BLK", "UBER", "NOW",
+SP500_TICKERS = [
+    "MMM", "AOS", "ABT", "ABBV", "ACN", "ADBE", "AMD", "AES", "AFL", "A",
+    "APD", "ABNB", "AKAM", "ALB", "ARE", "ALGN", "ALLE", "LNT", "ALL", "GOOGL",
+    "GOOG", "MO", "AMZN", "AMCR", "AEE", "AAL", "AEP", "AXP", "AIG", "AMT",
+    "AWK", "AMP", "AME", "AMGN", "APH", "ADI", "ANSS", "AON", "APA", "AAPL",
+    "AMAT", "APTV", "ACGL", "ADM", "ANET", "AJG", "AIZ", "T", "ATO", "ADSK",
+    "ADP", "AZO", "AVB", "AVY", "AXON", "BKR", "BALL", "BAC", "BA", "BKNG",
+    "BWA", "BSX", "BMY", "AVGO", "BR", "BRO", "BLDR", "BG", "CDNS",
+    "CZR", "CPT", "CPB", "COF", "CAH", "KMX", "CCL", "CARR", "CAT",
+    "CBOE", "CBRE", "CDW", "CE", "COR", "CNC", "CNX", "CDAY", "CF", "CRL",
+    "SCHW", "CHTR", "CVX", "CMG", "CB", "CHD", "CI", "CINF", "CTAS", "CSCO",
+    "C", "CFG", "CLX", "CME", "CMS", "KO", "CTSH", "CL", "CMCSA", "CAG",
+    "COP", "ED", "STZ", "CEG", "COO", "CPRT", "GLW", "CPAY", "CTVA", "CSGP",
+    "COST", "CTRA", "CCI", "CSX", "CMI", "CVS", "DHR", "DRI", "DVA", "DAY",
+    "DE", "DAL", "DVN", "DXCM", "FANG", "DLR", "DFS", "DG", "DLTR", "D",
+    "DPZ", "DOV", "DOW", "DHI", "DTE", "DUK", "DD", "EMN", "ETN", "EBAY",
+    "ECL", "EIX", "EW", "EA", "ELV", "LLY", "EMR", "ENPH", "ETR", "EOG",
+    "EPAM", "EQT", "EFX", "EQIX", "EQR", "ESS", "EL", "ETSY", "EG", "EVRG",
+    "ES", "EXC", "EXPE", "EXPD", "EXR", "XOM", "FFIV", "FDS", "FICO", "FAST",
+    "FRT", "FDX", "FIS", "FITB", "FSLR", "FE", "FI", "FMC", "F", "FTNT",
+    "FTV", "FOXA", "FOX", "BEN", "FCX", "GRMN", "IT", "GE", "GEHC", "GEV",
+    "GEN", "GNRC", "GD", "GIS", "GM", "GPC", "GILD", "GS", "HAL", "HIG",
+    "HAS", "HCA", "DOC", "HSIC", "HSY", "HES", "HPE", "HLT", "HOLX", "HD",
+    "HON", "HRL", "HST", "HWM", "HPQ", "HUBB", "HUM", "HBAN", "HII", "IBM",
+    "IEX", "IDXX", "ITW", "INCY", "IR", "PODD", "INTC", "ICE", "IFF", "IP",
+    "IPG", "INTU", "ISRG", "IVZ", "INVH", "IQV", "IRM", "JBHT", "JBL", "JKHY",
+    "J", "JNJ", "JCI", "JPM", "JNPR", "K", "KVUE", "KDP", "KEY", "KEYS",
+    "KMB", "KIM", "KMI", "KLAC", "KHC", "KR", "LHX", "LH", "LRCX", "LW",
+    "LVS", "LDOS", "LEN", "LII", "LIN", "LYV", "LKQ", "LMT", "L", "LOW",
+    "LULU", "LYB", "MTB", "MRO", "MPC", "MKTX", "MAR", "MMC", "MLM", "MAS",
+    "MA", "MTCH", "MKC", "MCD", "MCK", "MDT", "MRK", "META", "MET", "MTD",
+    "MGM", "MCHP", "MU", "MSFT", "MAA", "MRNA", "MHK", "MOH", "TAP", "MDLZ",
+    "MPWR", "MNST", "MCO", "MS", "MOS", "MSI", "MSCI", "NDAQ", "NTAP", "NFLX",
+    "NEM", "NWSA", "NWS", "NEE", "NKE", "NI", "NDSN", "NSC", "NTRS", "NOC",
+    "NCLH", "NRG", "NUE", "NVDA", "NVR", "NXPI", "ORLY", "OXY", "ODFL", "OMC",
+    "ON", "OKE", "ORCL", "OTIS", "PCAR", "PKG", "PLTR", "PANW", "PARA", "PH",
+    "PAYX", "PAYC", "PYPL", "PNR", "PEP", "PFE", "PCG", "PM", "PSX", "PNW",
+    "PNC", "POOL", "PPG", "PPL", "PFG", "PG", "PGR", "PRU", "PLD",
+    "PEG", "PTC", "PSA", "PHM", "PWR", "QCOM", "DGX", "RL", "RJF",
+    "RTX", "O", "REG", "REGN", "RF", "RSG", "RMD", "RVTY", "ROK", "ROL",
+    "ROP", "ROST", "RCL", "SPGI", "CRM", "SBAC", "SLB", "STX", "SRE", "NOW",
+    "SHW", "SPG", "SWKS", "SJM", "SW", "SNA", "SOLV", "SO", "LUV", "SWK",
+    "SBUX", "STT", "STLD", "STE", "SYK", "SMCI", "SYF", "SNPS", "SYY", "TMUS",
+    "TROW", "TTWO", "TPR", "TRGP", "TGT", "TEL", "TDY", "TFX", "TER", "TSLA",
+    "TXN", "TXT", "TMO", "TJX", "TSCO", "TT", "TDG", "TRV", "TRMB", "TFC",
+    "TYL", "TSN", "USB", "UBER", "UDR", "ULTA", "UNP", "UAL", "UPS", "URI",
+    "UNH", "UHS", "VLO", "VTR", "VLTO", "VRSN", "VRSK", "VZ", "VRTX", "VTRS",
+    "VICI", "V", "VST", "VMC", "WRB", "GWW", "WAB", "WBA", "WMT", "DIS",
+    "WBD", "WM", "WAT", "WEC", "WFC", "WELL", "WST", "WDC", "WY", "WHR",
+    "WMB", "WTW", "WYNN", "XEL", "XYL", "YUM", "ZBRA", "ZBH", "ZTS",
 ]
+
+# In-memory cache: (timestamp, list[dict])
+_grades_cache: tuple[float, list[dict]] | None = None
+_grades_cache_lock = asyncio.Lock()
+GRADES_CACHE_TTL = 4 * 60 * 60  # 4 hours
+GRADES_CONCURRENCY = 20  # max parallel FMP requests
+
+
+async def _fetch_sp500_grades() -> list[dict]:
+    """Fetch most-recent grade for every S&P 500 ticker with concurrency limit."""
+    semaphore = asyncio.Semaphore(GRADES_CONCURRENCY)
+    cutoff = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    async def fetch_one(symbol: str) -> list[dict]:
+        async with semaphore:
+            rows = await fmp_grades(symbol, limit=3)
+            # Keep only rows from the last 60 days
+            from datetime import date, timedelta
+            since = (date.today() - timedelta(days=60)).isoformat()
+            return [r for r in rows if (r.get("date") or "") >= since]
+
+    results = await asyncio.gather(*[fetch_one(s) for s in SP500_TICKERS], return_exceptions=True)
+    merged: list[dict] = []
+    for r in results:
+        if isinstance(r, list):
+            merged.extend(r)
+    merged.sort(key=lambda r: r.get("date") or "", reverse=True)
+    return merged
+
+
+async def _get_cached_grades() -> list[dict]:
+    global _grades_cache
+    async with _grades_cache_lock:
+        now = time.time()
+        if _grades_cache and (now - _grades_cache[0]) < GRADES_CACHE_TTL:
+            return _grades_cache[1]
+        data = await _fetch_sp500_grades()
+        _grades_cache = (now, data)
+        return data
 
 
 @router.get("/analyst-ratings")
 async def analyst_ratings(
-    symbols: str | None = Query(None, description="Comma-separated list of tickers"),
-    limit: int = Query(10, ge=1, le=50, description="Grades per symbol"),
+    symbols: str | None = Query(None, description="Comma-separated watchlist tickers"),
 ):
-    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols else DEFAULT_ANALYST_SYMBOLS
-    try:
-        data = await fmp_grades_batch(symbol_list, per_symbol_limit=limit)
-    except Exception:
-        data = []
+    data = await _get_cached_grades()
+
+    # Filter to watchlist if provided
+    if symbols:
+        symbol_set = {s.strip().upper() for s in symbols.split(",") if s.strip()}
+        data = [r for r in data if r.get("symbol") in symbol_set]
+
     return {
         "ratings": [
             {
@@ -132,7 +217,8 @@ async def analyst_ratings(
             }
             for r in data
             if r.get("symbol")
-        ]
+        ],
+        "cached": _grades_cache is not None,
     }
 
 

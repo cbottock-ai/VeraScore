@@ -73,7 +73,7 @@ export function AnalystRatingsPage() {
 
   const { data: ratings = [], isLoading, isError } = useQuery<AnalystRating[]>({
     queryKey: ['analystRatings', symbolsParam],
-    queryFn: () => getAnalystRatings({ symbols: symbolsParam, limit: 15 }),
+    queryFn: () => getAnalystRatings({ symbols: symbolsParam }),
     staleTime: 10 * 60 * 1000,
   })
 

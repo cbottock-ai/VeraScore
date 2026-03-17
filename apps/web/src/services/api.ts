@@ -378,7 +378,7 @@ export interface AnalystRating {
   firm: string | null
 }
 
-export async function getAnalystRatings(params?: { symbols?: string; limit?: number }): Promise<AnalystRating[]> {
+export async function getAnalystRatings(params?: { symbols?: string }): Promise<AnalystRating[]> {
   const { data } = await api.get<{ ratings: AnalystRating[] }>('/market/analyst-ratings', { params })
   return data.ratings
 }
