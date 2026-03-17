@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getAnalystRatings, listPortfolios, getPortfolio } from '@/services/api'
 import type { AnalystRating } from '@/services/api'
@@ -45,7 +45,13 @@ function fmtDate(s: string | null): string {
 export function AnalystRatingsPage() {
   const [actionFilter, setActionFilter] = useState<ActionFilter>('all')
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [watchlistOnly, setWatchlistOnly] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   // Load watchlist tickers
   const { data: portfoliosData } = useQuery({ queryKey: ['portfolios'], queryFn: listPortfolios })
@@ -76,14 +82,14 @@ export function AnalystRatingsPage() {
     if (actionFilter !== 'all') {
       rows = rows.filter((r) => normalizeAction(r.action) === actionFilter)
     }
-    if (search.trim()) {
-      const q = search.trim().toUpperCase()
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.trim().toUpperCase()
       rows = rows.filter(
         (r) => r.symbol?.toUpperCase().includes(q) || r.firm?.toUpperCase().includes(q),
       )
     }
     return rows
-  }, [ratings, actionFilter, search])
+  }, [ratings, actionFilter, debouncedSearch])
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: ratings.length, upgrade: 0, downgrade: 0, initiated: 0, reiterated: 0 }
