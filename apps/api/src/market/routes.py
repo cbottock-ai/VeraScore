@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from src.core.data_providers.fmp import (
     fmp_batch_quote,
     fmp_historical_price_light,
-    fmp_upgrades_downgrades,
+    fmp_grades_batch,
     fmp_insider_trading,
 )
 
@@ -101,24 +101,34 @@ async def sector_history(
     }
 
 
+DEFAULT_ANALYST_SYMBOLS = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "JPM", "LLY",
+    "V", "UNH", "XOM", "MA", "JNJ", "PG", "HD", "COST", "WMT", "NFLX",
+    "BAC", "CRM", "ORCL", "AMD", "ABBV", "KO", "CVX", "MRK", "PEP", "ADBE",
+    "TMO", "ACN", "CSCO", "LIN", "MCD", "QCOM", "TXN", "GE", "DHR", "INTU",
+    "AMGN", "IBM", "CAT", "SPGI", "BKNG", "ISRG", "GS", "BLK", "UBER", "NOW",
+]
+
+
 @router.get("/analyst-ratings")
-async def analyst_ratings(limit: int = Query(100, ge=1, le=500)):
+async def analyst_ratings(
+    symbols: str | None = Query(None, description="Comma-separated list of tickers"),
+    limit: int = Query(10, ge=1, le=50, description="Grades per symbol"),
+):
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols else DEFAULT_ANALYST_SYMBOLS
     try:
-        data = await fmp_upgrades_downgrades(limit=limit)
+        data = await fmp_grades_batch(symbol_list, per_symbol_limit=limit)
     except Exception:
         data = []
     return {
         "ratings": [
             {
                 "symbol": r.get("symbol"),
-                "name": r.get("companyName"),
-                "published_date": r.get("publishedDate"),
+                "date": r.get("date"),
                 "action": r.get("action"),
-                "rating_from": r.get("previousGrade") or r.get("ratingFrom"),
-                "rating_to": r.get("newGrade") or r.get("ratingTo"),
-                "price_target": r.get("priceTarget"),
-                "price_target_from": r.get("previousPriceTarget") or r.get("priceTargetFrom"),
-                "firm": r.get("gradingCompany") or r.get("analystFirm"),
+                "rating_from": r.get("previousGrade"),
+                "rating_to": r.get("newGrade"),
+                "firm": r.get("gradingCompany"),
             }
             for r in data
             if r.get("symbol")

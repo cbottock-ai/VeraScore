@@ -9,7 +9,6 @@ import { ScreenerPage } from '@/pages/research/Screener'
 import { SectorsPage } from '@/pages/research/Sectors'
 import { AnalystRatingsPage } from '@/pages/research/AnalystRatings'
 import { InsiderActivityPage } from '@/pages/research/InsiderActivity'
-import { LearningPage } from '@/pages/research/Learning'
 import { ChatPage } from '@/pages/Chat'
 import { SettingsPage } from '@/pages/Settings'
 
@@ -40,7 +39,6 @@ function AppRoutes() {
         <Route path="/research/sectors" element={<SectorsPage />} />
         <Route path="/research/analyst-ratings" element={<AnalystRatingsPage />} />
         <Route path="/research/insider-activity" element={<InsiderActivityPage />} />
-        <Route path="/research/learning" element={<LearningPage />} />
         <Route path="/research/stock/:ticker" element={<StockResearchPage />} />
 
         {/* Legacy redirects */}

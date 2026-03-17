@@ -371,18 +371,15 @@ export async function getSectorHistory(fromDate: string, toDate: string): Promis
 
 export interface AnalystRating {
   symbol: string
-  name: string | null
-  published_date: string | null
+  date: string | null
   action: string | null
   rating_from: string | null
   rating_to: string | null
-  price_target: number | null
-  price_target_from: number | null
   firm: string | null
 }
 
-export async function getAnalystRatings(limit = 100): Promise<AnalystRating[]> {
-  const { data } = await api.get<{ ratings: AnalystRating[] }>('/market/analyst-ratings', { params: { limit } })
+export async function getAnalystRatings(params?: { symbols?: string; limit?: number }): Promise<AnalystRating[]> {
+  const { data } = await api.get<{ ratings: AnalystRating[] }>('/market/analyst-ratings', { params })
   return data.ratings
 }
 

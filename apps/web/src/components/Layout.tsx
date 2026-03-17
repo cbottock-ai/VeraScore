@@ -12,7 +12,6 @@ const RESEARCH_SUB_ITEMS = [
   { to: '/research/sectors', label: 'Sectors' },
   { to: '/research/analyst-ratings', label: 'Analyst Ratings' },
   { to: '/research/insider-activity', label: 'Insider Activity' },
-  { to: '/research/learning', label: 'Learning' },
 ]
 
 const mainNavItems = [

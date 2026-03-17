@@ -499,21 +499,32 @@ async def fmp_sector_performance() -> list[dict]:
         return data if isinstance(data, list) else []
 
 
-async def fmp_upgrades_downgrades(limit: int = 100) -> list[dict]:
-    """Get recent analyst upgrades, downgrades, and initiations."""
+async def fmp_grades(symbol: str, limit: int = 20) -> list[dict]:
+    """Get analyst grade changes for a single symbol."""
     if not settings.fmp_api_key:
         return []
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{FMP_BASE}/upgrades-downgrades-rss-feed",
-            params={"page": 0, "apikey": settings.fmp_api_key},
-            timeout=15,
+            f"{FMP_BASE}/grades",
+            params={"symbol": symbol, "limit": limit, "apikey": settings.fmp_api_key},
+            timeout=10,
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            return []
         data = resp.json()
-        if isinstance(data, list):
-            return data[:limit]
+        return data if isinstance(data, list) else []
+
+
+async def fmp_grades_batch(symbols: list[str], per_symbol_limit: int = 10) -> list[dict]:
+    """Fetch analyst grades for multiple symbols in parallel, sorted by date desc."""
+    if not symbols:
         return []
+    results = await asyncio.gather(*[fmp_grades(s, limit=per_symbol_limit) for s in symbols])
+    merged: list[dict] = []
+    for rows in results:
+        merged.extend(rows)
+    merged.sort(key=lambda r: r.get("date") or "", reverse=True)
+    return merged
 
 
 async def fmp_insider_trading(limit: int = 100, transaction_type: str | None = None) -> list[dict]:
