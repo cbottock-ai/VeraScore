@@ -37,7 +37,7 @@ async def sector_performance():
             {
                 "sector": sector_map[etf],
                 "etf": etf,
-                "changes_pct": quote_by_symbol.get(etf, {}).get("changesPercentage"),
+                "changes_pct": quote_by_symbol.get(etf, {}).get("changePercentage"),
                 "price": quote_by_symbol.get(etf, {}).get("price"),
                 "change": quote_by_symbol.get(etf, {}).get("change"),
             }
