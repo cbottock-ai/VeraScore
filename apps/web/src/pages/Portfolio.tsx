@@ -12,6 +12,7 @@ import {
   importCsv,
   exportCsv,
   refreshPortfolio,
+  savePortfolioColumns,
 } from '@/services/api'
 import type { ColumnDef } from '@/types/portfolio'
 
@@ -108,6 +109,7 @@ export function PortfolioPage() {
   // Auto-select first watchlist if none selected
   const portfolios = data?.portfolios ?? []
   const activeId = selectedId ?? portfolios[0]?.id ?? null
+  const activePortfolio = portfolios.find((p) => p.id === activeId) ?? null
 
   return (
     <div>
@@ -132,7 +134,7 @@ export function PortfolioPage() {
 
       {/* Watchlist content */}
       {activeId ? (
-        <WatchlistTable watchlistId={activeId} />
+        <WatchlistTable watchlistId={activeId} savedColumns={activePortfolio?.column_config ?? null} />
       ) : (
         <EmptyState />
       )}
@@ -205,7 +207,7 @@ function WatchlistActions() {
 // Sort direction type
 type SortDirection = 'asc' | 'desc' | null
 
-function WatchlistTable({ watchlistId }: { watchlistId: number }) {
+function WatchlistTable({ watchlistId, savedColumns }: { watchlistId: number; savedColumns: string[] | null }) {
   const queryClient = useQueryClient()
   const [showAddStock, setShowAddStock] = useState(false)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
@@ -216,15 +218,30 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
 
-  // Column state with localStorage persistence
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
-    const saved = localStorage.getItem('watchlist-columns')
-    return saved ? JSON.parse(saved) : DEFAULT_COLUMNS
+  // Column state — server-side config takes priority over localStorage fallback
+  const [visibleColumns, setVisibleColumnsRaw] = useState<string[]>(() => {
+    if (savedColumns && savedColumns.length > 0) return savedColumns
+    const local = localStorage.getItem('watchlist-columns')
+    return local ? JSON.parse(local) : DEFAULT_COLUMNS
   })
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Sync if server config differs from what we initialised with (e.g. page re-rendered)
   useEffect(() => {
-    localStorage.setItem('watchlist-columns', JSON.stringify(visibleColumns))
-  }, [visibleColumns])
+    if (savedColumns && savedColumns.length > 0) {
+      setVisibleColumnsRaw(savedColumns)
+    }
+  }, [watchlistId]) // Only on portfolio switch, not every render
+
+  function setVisibleColumns(cols: string[]) {
+    setVisibleColumnsRaw(cols)
+    localStorage.setItem('watchlist-columns', JSON.stringify(cols))
+    // Debounce API save — wait 1s after last change
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => {
+      savePortfolioColumns(watchlistId, cols).catch(() => {})
+    }, 1000)
+  }
 
   // Fetch available columns from API
   const { data: availableColumnsData } = useQuery({
@@ -307,13 +324,13 @@ function WatchlistTable({ watchlistId }: { watchlistId: number }) {
 
   const removeColumn = (columnId: string) => {
     if (columnId === 'ticker') return // Can't remove ticker
-    setVisibleColumns(cols => cols.filter(c => c !== columnId))
+    setVisibleColumns(visibleColumns.filter(c => c !== columnId))
     setContextMenu(null)
   }
 
   const addColumn = (columnId: string) => {
     if (!visibleColumns.includes(columnId)) {
-      setVisibleColumns(cols => [...cols, columnId])
+      setVisibleColumns([...visibleColumns, columnId])
     }
     setShowColumnPicker(false)
   }

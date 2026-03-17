@@ -6,6 +6,7 @@ export interface PortfolioSummary {
   total_value: number | null
   total_gain_loss: number | null
   total_gain_loss_pct: number | null
+  column_config: string[] | null
 }
 
 export interface PortfolioListResponse {

@@ -37,6 +37,16 @@ logger = logging.getLogger(__name__)
 
 # --- Portfolio CRUD ---
 
+def _parse_column_config(raw: str | None) -> list[str] | None:
+    if not raw:
+        return None
+    import json
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
 def list_portfolios(db: Session, user_id: int | None = None) -> list[PortfolioSummary]:
     query = db.query(Portfolio)
     if user_id is not None:
@@ -49,6 +59,7 @@ def list_portfolios(db: Session, user_id: int | None = None) -> list[PortfolioSu
             name=p.name,
             description=p.description,
             holdings_count=len(p.holdings),
+            column_config=_parse_column_config(p.column_config),
         )
         for p in portfolios
     ]
@@ -77,6 +88,16 @@ def update_portfolio(portfolio_id: int, data: PortfolioUpdate, db: Session) -> P
     db.commit()
     db.refresh(portfolio)
     return portfolio
+
+
+def save_column_config(portfolio_id: int, columns: list[str], db: Session) -> bool:
+    import json
+    portfolio = db.get(Portfolio, portfolio_id)
+    if not portfolio:
+        return False
+    portfolio.column_config = json.dumps(columns)
+    db.commit()
+    return True
 
 
 def delete_portfolio(portfolio_id: int, db: Session) -> bool:

@@ -121,6 +121,10 @@ export async function deletePortfolio(id: number): Promise<void> {
   await api.delete(`/portfolios/${id}`)
 }
 
+export async function savePortfolioColumns(id: number, columns: string[]): Promise<void> {
+  await api.patch(`/portfolios/${id}/columns`, { columns })
+}
+
 export async function addHolding(portfolioId: number, payload: HoldingCreate): Promise<HoldingDetail> {
   const { data } = await api.post<HoldingDetail>(`/portfolios/${portfolioId}/holdings`, payload)
   return data

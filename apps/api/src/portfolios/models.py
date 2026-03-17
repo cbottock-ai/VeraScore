@@ -13,6 +13,7 @@ class Portfolio(Base):
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
+    column_config: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of column IDs
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

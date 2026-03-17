@@ -19,6 +19,7 @@ class PortfolioSummary(BaseModel):
     total_value: float | None = None
     total_gain_loss: float | None = None
     total_gain_loss_pct: float | None = None
+    column_config: list[str] | None = None
 
 
 class PortfolioListResponse(BaseModel):

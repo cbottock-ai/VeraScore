@@ -32,6 +32,12 @@ def _run_migrations():
             conn.execute(text("ALTER TABLE transcripts ADD COLUMN sentiment_score REAL"))
         if "sentiment_label" not in existing:
             conn.execute(text("ALTER TABLE transcripts ADD COLUMN sentiment_label VARCHAR(20)"))
+        portfolio_cols = {
+            row[1]
+            for row in conn.execute(text("PRAGMA table_info(portfolios)")).fetchall()
+        }
+        if "column_config" not in portfolio_cols:
+            conn.execute(text("ALTER TABLE portfolios ADD COLUMN column_config TEXT"))
         conn.commit()
 
 

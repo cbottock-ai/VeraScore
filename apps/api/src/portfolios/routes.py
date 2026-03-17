@@ -33,6 +33,7 @@ from src.portfolios.service import (
     get_portfolio,
     import_csv,
     list_portfolios,
+    save_column_config,
     update_holding,
     update_portfolio,
 )
@@ -205,6 +206,16 @@ async def update(portfolio_id: int, data: PortfolioUpdate, db: Session = Depends
         description=portfolio.description,
         holdings_count=len(portfolio.holdings),
     )
+
+
+@router.patch("/{portfolio_id}/columns", status_code=204)
+async def save_columns(portfolio_id: int, data: dict, db: Session = Depends(get_db)):
+    """Persist the user's column selection for this portfolio."""
+    columns = data.get("columns", [])
+    if not isinstance(columns, list):
+        raise HTTPException(status_code=422, detail="columns must be a list")
+    if not save_column_config(portfolio_id, columns, db):
+        raise HTTPException(status_code=404, detail="Portfolio not found")
 
 
 @router.delete("/{portfolio_id}", status_code=204)
