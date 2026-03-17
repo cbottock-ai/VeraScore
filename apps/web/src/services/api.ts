@@ -305,6 +305,7 @@ export interface ScreenerResult {
   price: number | null
   beta: number | null
   volume: number | null
+  dividend: number | null
   exchange: string | null
   country: string | null
 }
@@ -319,7 +320,14 @@ export interface ScreenerResponse {
 export async function runScreener(params: {
   market_cap_min?: number
   market_cap_max?: number
+  price_min?: number
+  price_max?: number
+  beta_min?: number
+  beta_max?: number
+  volume_min?: number
+  dividend_min?: number
   sector?: string
+  industry?: string
   exchange?: string
   country?: string
   limit?: number

@@ -276,29 +276,51 @@ async def fmp_batch_quote(symbols: list[str]) -> list[dict]:
 async def fmp_screener(
     market_cap_min: int | None = None,
     market_cap_max: int | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    beta_min: float | None = None,
+    beta_max: float | None = None,
+    volume_min: int | None = None,
+    dividend_min: float | None = None,
     sector: str | None = None,
+    industry: str | None = None,
     exchange: str | None = None,
-    country: str = "US",
+    country: str | None = "US",
     limit: int = 250,
     offset: int = 0,
 ) -> list[dict]:
-    """Screen stocks by market cap, sector, exchange. Returns up to 250 results."""
+    """Screen stocks by various criteria. Returns up to 250 results."""
     if not settings.fmp_api_key:
         return []
     params: dict[str, Any] = {
         "apikey": settings.fmp_api_key,
-        "country": country,
         "isEtf": "false",
         "isActivelyTrading": "true",
         "limit": limit,
         "offset": offset,
     }
+    if country:
+        params["country"] = country
     if market_cap_min is not None:
         params["marketCapMoreThan"] = market_cap_min
     if market_cap_max is not None:
         params["marketCapLessThan"] = market_cap_max
+    if price_min is not None:
+        params["priceMoreThan"] = price_min
+    if price_max is not None:
+        params["priceLessThan"] = price_max
+    if beta_min is not None:
+        params["betaMoreThan"] = beta_min
+    if beta_max is not None:
+        params["betaLessThan"] = beta_max
+    if volume_min is not None:
+        params["volumeMoreThan"] = volume_min
+    if dividend_min is not None:
+        params["lastAnnualDividendMoreThan"] = dividend_min
     if sector:
         params["sector"] = sector
+    if industry:
+        params["industry"] = industry
     if exchange:
         params["exchange"] = exchange
     async with httpx.AsyncClient() as client:
