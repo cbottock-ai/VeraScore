@@ -387,6 +387,26 @@ export async function getAnalystRatings(params?: { symbols?: string }): Promise<
   return data.ratings
 }
 
+export interface AnalystConsensus {
+  strong_buy: number | null
+  buy: number | null
+  hold: number | null
+  sell: number | null
+  strong_sell: number | null
+  consensus: string | null
+  pt_high: number | null
+  pt_low: number | null
+  pt_consensus: number | null
+  pt_median: number | null
+}
+
+export async function getAnalystConsensus(symbols?: string): Promise<Record<string, AnalystConsensus>> {
+  const { data } = await api.get<{ consensus: Record<string, AnalystConsensus> }>('/market/analyst-consensus', {
+    params: symbols ? { symbols } : undefined,
+  })
+  return data.consensus
+}
+
 export interface InsiderTrade {
   symbol: string
   filing_date: string | null

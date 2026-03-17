@@ -7,6 +7,8 @@ from src.core.data_providers.fmp import (
     fmp_batch_quote,
     fmp_historical_price_light,
     fmp_grades,
+    fmp_grades_consensus,
+    fmp_price_target_consensus,
     fmp_insider_trading,
 )
 
@@ -154,56 +156,88 @@ SP500_TICKERS = [
     "WMB", "WTW", "WYNN", "XEL", "XYL", "YUM", "ZBRA", "ZBH", "ZTS",
 ]
 
-# In-memory cache: (timestamp, list[dict])
+# In-memory caches
 _grades_cache: tuple[float, list[dict]] | None = None
-_grades_cache_lock = asyncio.Lock()
+_consensus_cache: tuple[float, dict[str, dict]] | None = None  # symbol -> {consensus, price_target}
+_cache_lock = asyncio.Lock()
 GRADES_CACHE_TTL = 4 * 60 * 60  # 4 hours
-GRADES_CONCURRENCY = 20  # max parallel FMP requests
+GRADES_CONCURRENCY = 20
 
 
-async def _fetch_sp500_grades() -> list[dict]:
-    """Fetch most-recent grade for every S&P 500 ticker with concurrency limit."""
+async def _fetch_sp500_data() -> tuple[list[dict], dict[str, dict]]:
+    """Fetch grades + consensus + price targets for all S&P 500 tickers."""
+    from datetime import date, timedelta
     semaphore = asyncio.Semaphore(GRADES_CONCURRENCY)
-    cutoff = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    since = (date.today() - timedelta(days=60)).isoformat()
 
-    async def fetch_one(symbol: str) -> list[dict]:
+    async def fetch_one(symbol: str):
         async with semaphore:
-            rows = await fmp_grades(symbol, limit=3)
-            # Keep only rows from the last 60 days
-            from datetime import date, timedelta
-            since = (date.today() - timedelta(days=60)).isoformat()
-            return [r for r in rows if (r.get("date") or "") >= since]
+            grades, consensus, pt = await asyncio.gather(
+                fmp_grades(symbol, limit=3),
+                fmp_grades_consensus(symbol),
+                fmp_price_target_consensus(symbol),
+                return_exceptions=True,
+            )
+            recent = [r for r in (grades if isinstance(grades, list) else [])
+                      if (r.get("date") or "") >= since]
+            return symbol, recent, consensus, pt
 
     results = await asyncio.gather(*[fetch_one(s) for s in SP500_TICKERS], return_exceptions=True)
-    merged: list[dict] = []
+
+    merged_grades: list[dict] = []
+    consensus_map: dict[str, dict] = {}
+
     for r in results:
-        if isinstance(r, list):
-            merged.extend(r)
-    merged.sort(key=lambda r: r.get("date") or "", reverse=True)
-    return merged
+        if isinstance(r, Exception):
+            continue
+        symbol, grades, consensus, pt = r
+        merged_grades.extend(grades)
+        entry: dict = {}
+        if isinstance(consensus, dict):
+            entry.update({
+                "strong_buy": consensus.get("strongBuy"),
+                "buy": consensus.get("buy"),
+                "hold": consensus.get("hold"),
+                "sell": consensus.get("sell"),
+                "strong_sell": consensus.get("strongSell"),
+                "consensus": consensus.get("consensus"),
+            })
+        if isinstance(pt, dict):
+            entry.update({
+                "pt_high": pt.get("targetHigh"),
+                "pt_low": pt.get("targetLow"),
+                "pt_consensus": pt.get("targetConsensus"),
+                "pt_median": pt.get("targetMedian"),
+            })
+        if entry:
+            consensus_map[symbol] = entry
+
+    merged_grades.sort(key=lambda r: r.get("date") or "", reverse=True)
+    return merged_grades, consensus_map
 
 
-async def _get_cached_grades() -> list[dict]:
-    global _grades_cache
-    async with _grades_cache_lock:
+async def _get_cache() -> tuple[list[dict], dict[str, dict]]:
+    global _grades_cache, _consensus_cache
+    async with _cache_lock:
         now = time.time()
-        if _grades_cache and (now - _grades_cache[0]) < GRADES_CACHE_TTL:
-            return _grades_cache[1]
-        data = await _fetch_sp500_grades()
-        _grades_cache = (now, data)
-        return data
+        if (_grades_cache and _consensus_cache and
+                (now - _grades_cache[0]) < GRADES_CACHE_TTL):
+            return _grades_cache[1], _consensus_cache[1]
+        grades, consensus = await _fetch_sp500_data()
+        _grades_cache = (now, grades)
+        _consensus_cache = (now, consensus)
+        return grades, consensus
 
 
 @router.get("/analyst-ratings")
 async def analyst_ratings(
     symbols: str | None = Query(None, description="Comma-separated watchlist tickers"),
 ):
-    data = await _get_cached_grades()
+    grades, _ = await _get_cache()
 
-    # Filter to watchlist if provided
     if symbols:
         symbol_set = {s.strip().upper() for s in symbols.split(",") if s.strip()}
-        data = [r for r in data if r.get("symbol") in symbol_set]
+        grades = [r for r in grades if r.get("symbol") in symbol_set]
 
     return {
         "ratings": [
@@ -215,11 +249,26 @@ async def analyst_ratings(
                 "rating_to": r.get("newGrade"),
                 "firm": r.get("gradingCompany"),
             }
-            for r in data
+            for r in grades
             if r.get("symbol")
         ],
-        "cached": _grades_cache is not None,
     }
+
+
+@router.get("/analyst-consensus")
+async def analyst_consensus(
+    symbols: str | None = Query(None, description="Comma-separated tickers"),
+):
+    """Return buy/hold/sell consensus + price target for requested symbols."""
+    _, consensus_map = await _get_cache()
+
+    if symbols:
+        symbol_set = {s.strip().upper() for s in symbols.split(",") if s.strip()}
+        result = {s: consensus_map[s] for s in symbol_set if s in consensus_map}
+    else:
+        result = consensus_map
+
+    return {"consensus": result}
 
 
 @router.get("/insider-trades")

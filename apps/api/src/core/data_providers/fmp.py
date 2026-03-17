@@ -527,6 +527,38 @@ async def fmp_grades_batch(symbols: list[str], per_symbol_limit: int = 10) -> li
     return merged
 
 
+async def fmp_price_target_consensus(symbol: str) -> dict | None:
+    """Get analyst price target consensus (high/low/mean/median) for a symbol."""
+    if not settings.fmp_api_key:
+        return None
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/price-target-consensus",
+            params={"symbol": symbol, "apikey": settings.fmp_api_key},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return data[0] if isinstance(data, list) and data else None
+
+
+async def fmp_grades_consensus(symbol: str) -> dict | None:
+    """Get analyst buy/hold/sell consensus counts for a symbol."""
+    if not settings.fmp_api_key:
+        return None
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/grades-consensus",
+            params={"symbol": symbol, "apikey": settings.fmp_api_key},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return data[0] if isinstance(data, list) and data else None
+
+
 async def fmp_insider_trading(limit: int = 100, transaction_type: str | None = None) -> list[dict]:
     """Get recent insider trading transactions."""
     if not settings.fmp_api_key:
