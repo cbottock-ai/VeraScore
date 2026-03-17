@@ -1,27 +1,48 @@
 from fastapi import APIRouter, Query
 from src.core.data_providers.fmp import (
-    fmp_sector_performance,
+    fmp_batch_quote,
     fmp_upgrades_downgrades,
     fmp_insider_trading,
 )
 
 router = APIRouter(prefix="/market", tags=["market"])
 
+# Sector ETFs mapped to GICS sector names
+SECTOR_ETFS: list[tuple[str, str]] = [
+    ("XLK", "Technology"),
+    ("XLV", "Healthcare"),
+    ("XLF", "Financials"),
+    ("XLY", "Consumer Discretionary"),
+    ("XLP", "Consumer Staples"),
+    ("XLI", "Industrials"),
+    ("XLE", "Energy"),
+    ("XLU", "Utilities"),
+    ("XLRE", "Real Estate"),
+    ("XLB", "Materials"),
+    ("XLC", "Communication Services"),
+]
+
 
 @router.get("/sectors")
 async def sector_performance():
+    etf_symbols = [etf for etf, _ in SECTOR_ETFS]
+    sector_map = {etf: sector for etf, sector in SECTOR_ETFS}
     try:
-        data = await fmp_sector_performance()
+        quotes = await fmp_batch_quote(etf_symbols)
     except Exception:
-        data = []
+        quotes = []
+    quote_by_symbol = {q.get("symbol", "").upper(): q for q in quotes}
     return {
         "sectors": [
             {
-                "sector": r.get("sector"),
-                "changes_pct": _parse_pct(r.get("changesPercentage")),
+                "sector": sector_map[etf],
+                "etf": etf,
+                "changes_pct": quote_by_symbol.get(etf, {}).get("changesPercentage"),
+                "price": quote_by_symbol.get(etf, {}).get("price"),
+                "change": quote_by_symbol.get(etf, {}).get("change"),
             }
-            for r in data
-            if r.get("sector")
+            for etf in etf_symbols
+            if etf in sector_map
         ]
     }
 

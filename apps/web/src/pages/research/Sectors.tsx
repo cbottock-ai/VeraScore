@@ -79,10 +79,16 @@ export function SectorsPage() {
                 key={s.sector}
                 className={`rounded-xl p-4 flex flex-col justify-between min-h-24 transition-opacity hover:opacity-90 ${tileColor(s.changes_pct)}`}
               >
-                <span className="text-lg">{SECTOR_ICONS[s.sector] ?? '📊'}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-lg">{SECTOR_ICONS[s.sector] ?? '📊'}</span>
+                  <span className="text-xs opacity-60 font-mono">{s.etf}</span>
+                </div>
                 <div>
                   <div className="text-xs font-medium opacity-80 leading-tight">{s.sector}</div>
                   <div className="text-2xl font-bold tabular-nums mt-0.5">{fmt(s.changes_pct)}</div>
+                  {s.price != null && (
+                    <div className="text-xs opacity-60 tabular-nums">${s.price.toFixed(2)}</div>
+                  )}
                 </div>
               </div>
             ))}

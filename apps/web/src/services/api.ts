@@ -341,7 +341,10 @@ export async function runScreener(params: {
 
 export interface SectorPerformance {
   sector: string
+  etf: string
   changes_pct: number | null
+  price: number | null
+  change: number | null
 }
 
 export async function getSectorPerformance(): Promise<SectorPerformance[]> {
