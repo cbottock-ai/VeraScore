@@ -1,6 +1,10 @@
+import asyncio
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Query
 from src.core.data_providers.fmp import (
     fmp_batch_quote,
+    fmp_historical_price_light,
     fmp_upgrades_downgrades,
     fmp_insider_trading,
 )
@@ -44,6 +48,56 @@ async def sector_performance():
             for etf in etf_symbols
             if etf in sector_map
         ]
+    }
+
+
+@router.get("/sectors/history")
+async def sector_history(
+    from_date: str = Query(...),
+    to_date: str = Query(...),
+):
+    """Fetch historical daily prices for all 11 sector ETFs, normalized to % return from period start."""
+    etf_symbols = [etf for etf, _ in SECTOR_ETFS]
+    sector_map = {etf: sector for etf, sector in SECTOR_ETFS}
+
+    async def fetch(etf: str):
+        try:
+            rows = await fmp_historical_price_light(etf, from_date, to_date)
+            # rows are newest-first; reverse to chronological
+            rows = list(reversed(rows))
+            return etf, rows
+        except Exception:
+            return etf, []
+
+    results = await asyncio.gather(*[fetch(etf) for etf in etf_symbols])
+
+    # Build a date-aligned structure: {date -> {etf: pct_return}}
+    # First pass: collect all dates and base prices
+    etf_data: dict[str, list[dict]] = {}
+    for etf, rows in results:
+        etf_data[etf] = rows
+
+    all_dates: list[str] = sorted(
+        {row["date"] for rows in etf_data.values() for row in rows}
+    )
+
+    series = []
+    for d in all_dates:
+        point: dict = {"date": d}
+        for etf in etf_symbols:
+            rows = etf_data.get(etf, [])
+            if rows:
+                base = rows[0]["price"]
+                row = next((r for r in rows if r["date"] == d), None)
+                if row and base:
+                    point[etf] = round((row["price"] / base - 1) * 100, 4)
+                else:
+                    point[etf] = None
+        series.append(point)
+
+    return {
+        "series": series,
+        "etfs": [{"etf": etf, "sector": sector_map[etf]} for etf in etf_symbols],
     }
 
 

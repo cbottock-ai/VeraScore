@@ -469,6 +469,21 @@ async def fmp_analyst_estimates(ticker: str, limit: int = 10) -> list[dict]:
         return resp.json()
 
 
+async def fmp_historical_price_light(symbol: str, from_date: str, to_date: str) -> list[dict]:
+    """Get daily EOD prices (date + price) for a symbol over a date range."""
+    if not settings.fmp_api_key:
+        return []
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/historical-price-eod/light",
+            params={"symbol": symbol, "from": from_date, "to": to_date, "apikey": settings.fmp_api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+
 async def fmp_sector_performance() -> list[dict]:
     """Get current sector performance (% change)."""
     if not settings.fmp_api_key:

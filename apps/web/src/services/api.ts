@@ -352,6 +352,23 @@ export async function getSectorPerformance(): Promise<SectorPerformance[]> {
   return data.sectors
 }
 
+export interface SectorHistoryPoint {
+  date: string
+  [etf: string]: string | number | null
+}
+
+export interface SectorHistoryResponse {
+  series: SectorHistoryPoint[]
+  etfs: { etf: string; sector: string }[]
+}
+
+export async function getSectorHistory(fromDate: string, toDate: string): Promise<SectorHistoryResponse> {
+  const { data } = await api.get<SectorHistoryResponse>('/market/sectors/history', {
+    params: { from_date: fromDate, to_date: toDate },
+  })
+  return data
+}
+
 export interface AnalystRating {
   symbol: string
   name: string | null
