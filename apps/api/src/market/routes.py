@@ -233,11 +233,48 @@ async def _get_cache() -> tuple[list[dict], dict[str, dict]]:
 async def analyst_ratings(
     symbols: str | None = Query(None, description="Comma-separated watchlist tickers"),
 ):
-    grades, _ = await _get_cache()
+    from datetime import date, timedelta
+    grades, consensus = await _get_cache()
+    since = (date.today() - timedelta(days=60)).isoformat()
 
     if symbols:
         symbol_set = {s.strip().upper() for s in symbols.split(",") if s.strip()}
+        # Supplement cache with any watchlist tickers not in S&P 500
+        sp500_set = set(SP500_TICKERS)
+        extra_symbols = [s for s in symbol_set if s not in sp500_set]
+        if extra_symbols:
+            cached_symbols = {r.get("symbol") for r in grades}
+            missing = [s for s in extra_symbols if s not in cached_symbols]
+            if missing:
+                extra_grades_results = await asyncio.gather(
+                    *[fmp_grades(s, limit=3) for s in missing],
+                    return_exceptions=True,
+                )
+                extra_consensus_results = await asyncio.gather(
+                    *[asyncio.gather(fmp_grades_consensus(s), fmp_price_target_consensus(s), return_exceptions=True)
+                      for s in missing],
+                    return_exceptions=True,
+                )
+                for s, result in zip(missing, extra_grades_results):
+                    if isinstance(result, list):
+                        recent = [r for r in result if (r.get("date") or "") >= since]
+                        grades = grades + recent
+                for s, result in zip(missing, extra_consensus_results):
+                    if isinstance(result, (list, tuple)) and len(result) == 2:
+                        c, pt = result
+                        entry: dict = {}
+                        if isinstance(c, dict):
+                            entry.update({"strong_buy": c.get("strongBuy"), "buy": c.get("buy"),
+                                          "hold": c.get("hold"), "sell": c.get("sell"),
+                                          "strong_sell": c.get("strongSell"), "consensus": c.get("consensus")})
+                        if isinstance(pt, dict):
+                            entry.update({"pt_high": pt.get("targetHigh"), "pt_low": pt.get("targetLow"),
+                                          "pt_consensus": pt.get("targetConsensus"), "pt_median": pt.get("targetMedian")})
+                        if entry:
+                            consensus = {**consensus, s: entry}
         grades = [r for r in grades if r.get("symbol") in symbol_set]
+
+    grades = sorted(grades, key=lambda r: r.get("date") or "", reverse=True)
 
     return {
         "ratings": [
@@ -264,6 +301,28 @@ async def analyst_consensus(
 
     if symbols:
         symbol_set = {s.strip().upper() for s in symbols.split(",") if s.strip()}
+        # Fetch consensus for any symbols not in the S&P 500 cache
+        missing = [s for s in symbol_set if s not in consensus_map]
+        if missing:
+            extra = await asyncio.gather(
+                *[asyncio.gather(fmp_grades_consensus(s), fmp_price_target_consensus(s), return_exceptions=True)
+                  for s in missing],
+                return_exceptions=True,
+            )
+            consensus_map = dict(consensus_map)  # copy before mutating
+            for s, result in zip(missing, extra):
+                if isinstance(result, (list, tuple)) and len(result) == 2:
+                    c, pt = result
+                    entry: dict = {}
+                    if isinstance(c, dict):
+                        entry.update({"strong_buy": c.get("strongBuy"), "buy": c.get("buy"),
+                                      "hold": c.get("hold"), "sell": c.get("sell"),
+                                      "strong_sell": c.get("strongSell"), "consensus": c.get("consensus")})
+                    if isinstance(pt, dict):
+                        entry.update({"pt_high": pt.get("targetHigh"), "pt_low": pt.get("targetLow"),
+                                      "pt_consensus": pt.get("targetConsensus"), "pt_median": pt.get("targetMedian")})
+                    if entry:
+                        consensus_map[s] = entry
         result = {s: consensus_map[s] for s in symbol_set if s in consensus_map}
     else:
         result = consensus_map
