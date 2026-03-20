@@ -161,28 +161,62 @@ _grades_cache: tuple[float, list[dict]] | None = None
 _consensus_cache: tuple[float, dict[str, dict]] | None = None  # symbol -> {consensus, price_target}
 _cache_lock = asyncio.Lock()
 GRADES_CACHE_TTL = 4 * 60 * 60  # 4 hours
-GRADES_CONCURRENCY = 20
+GRADES_CONCURRENCY = 8  # conservative to avoid FMP 429s during S&P 500 fan-out
+
+_insider_cache: tuple[float, list[dict]] | None = None
+_insider_cache_lock = asyncio.Lock()
+INSIDER_CACHE_TTL = 2 * 60 * 60  # 2 hours
+
+
+GRADES_BATCH_SIZE = 50   # tickers per batch
+GRADES_BATCH_DELAY = 2.0  # seconds between batches — keeps us well under FMP rate limits
 
 
 async def _fetch_sp500_data() -> tuple[list[dict], dict[str, dict]]:
     """Fetch grades + consensus + price targets for all S&P 500 tickers."""
     from datetime import date, timedelta
-    semaphore = asyncio.Semaphore(GRADES_CONCURRENCY)
     since = (date.today() - timedelta(days=60)).isoformat()
 
-    async def fetch_one(symbol: str):
-        async with semaphore:
-            grades, consensus, pt = await asyncio.gather(
-                fmp_grades(symbol, limit=3),
-                fmp_grades_consensus(symbol),
-                fmp_price_target_consensus(symbol),
-                return_exceptions=True,
-            )
-            recent = [r for r in (grades if isinstance(grades, list) else [])
-                      if (r.get("date") or "") >= since]
-            return symbol, recent, consensus, pt
+    async def fetch_one(symbol: str) -> tuple:
+        try:
+            grades = await fmp_grades(symbol, limit=5)
+        except Exception:
+            return symbol, None, None, None  # None grades = failed, eligible for retry
+        try:
+            consensus = await fmp_grades_consensus(symbol)
+        except Exception:
+            consensus = None
+        try:
+            pt = await fmp_price_target_consensus(symbol)
+        except Exception:
+            pt = None
+        recent = [r for r in grades if (r.get("date") or "") >= since]
+        return symbol, recent, consensus, pt
 
-    results = await asyncio.gather(*[fetch_one(s) for s in SP500_TICKERS], return_exceptions=True)
+    # Process tickers in batches with a delay between each batch
+    tickers = list(SP500_TICKERS)
+    results: list = []
+    for i in range(0, len(tickers), GRADES_BATCH_SIZE):
+        batch = tickers[i:i + GRADES_BATCH_SIZE]
+        batch_results = await asyncio.gather(*[fetch_one(s) for s in batch], return_exceptions=True)
+        results.extend(batch_results)
+        if i + GRADES_BATCH_SIZE < len(tickers):
+            await asyncio.sleep(GRADES_BATCH_DELAY)
+
+    # Retry any tickers that returned None (rate-limited during first pass)
+    failed = [r[0] for r in results if not isinstance(r, Exception) and r[1] is None]
+    if failed:
+        await asyncio.sleep(10)
+        retry_results = []
+        for i in range(0, len(failed), GRADES_BATCH_SIZE):
+            batch = failed[i:i + GRADES_BATCH_SIZE]
+            batch_results = await asyncio.gather(*[fetch_one(s) for s in batch], return_exceptions=True)
+            retry_results.extend(batch_results)
+            if i + GRADES_BATCH_SIZE < len(failed):
+                await asyncio.sleep(GRADES_BATCH_DELAY)
+        failed_set = set(failed)
+        results = [r for r in results if not isinstance(r, Exception) and r[0] not in failed_set]
+        results += [r for r in retry_results if not isinstance(r, Exception)]
 
     merged_grades: list[dict] = []
     consensus_map: dict[str, dict] = {}
@@ -191,6 +225,8 @@ async def _fetch_sp500_data() -> tuple[list[dict], dict[str, dict]]:
         if isinstance(r, Exception):
             continue
         symbol, grades, consensus, pt = r
+        if grades is None:
+            continue  # still failed after retry — skip rather than overwrite good data
         merged_grades.extend(grades)
         entry: dict = {}
         if isinstance(consensus, dict):
@@ -227,6 +263,16 @@ async def _get_cache() -> tuple[list[dict], dict[str, dict]]:
         _grades_cache = (now, grades)
         _consensus_cache = (now, consensus)
         return grades, consensus
+
+
+@router.post("/analyst-ratings/refresh")
+async def refresh_analyst_cache():
+    """Force-invalidate the analyst ratings cache so it rebuilds on next request."""
+    global _grades_cache, _consensus_cache
+    async with _cache_lock:
+        _grades_cache = None
+        _consensus_cache = None
+    return {"status": "cache cleared"}
 
 
 @router.get("/analyst-ratings")
@@ -330,17 +376,17 @@ async def analyst_consensus(
     return {"consensus": result}
 
 
-@router.get("/insider-trades")
-async def insider_trades(
-    limit: int = Query(100, ge=1, le=500),
-    transaction_type: str | None = Query(None),
-):
-    try:
-        data = await fmp_insider_trading(limit=limit, transaction_type=transaction_type)
-    except Exception:
-        data = []
-    return {
-        "trades": [
+async def _get_insider_cache() -> list[dict]:
+    global _insider_cache
+    async with _insider_cache_lock:
+        now = time.time()
+        if _insider_cache and (now - _insider_cache[0]) < INSIDER_CACHE_TTL:
+            return _insider_cache[1]
+        # Paginate through FMP to build a rich dataset — done once per TTL
+        raw = await fmp_insider_trading(limit=1000)
+        # Routine/automatic transaction types that don't signal discretionary intent
+        NOISE_TYPES = {"A-Award", "M-Exempt", "F-InKind", "C-Conversion", "G-Gift", "D-Return"}
+        trades = [
             {
                 "symbol": r.get("symbol"),
                 "filing_date": r.get("filingDate"),
@@ -352,10 +398,25 @@ async def insider_trades(
                 "price": r.get("price"),
                 "value": _calc_value(r),
             }
-            for r in data
+            for r in raw
             if r.get("symbol")
+            and r.get("formType", "").strip() not in ("3", "3/A")  # Form 3 = initial disclosure, no transaction
+            and r.get("transactionType", "") not in NOISE_TYPES    # exclude routine grants/withholding
         ]
-    }
+        trades.sort(key=lambda t: t["transaction_date"] or t["filing_date"] or "", reverse=True)
+        _insider_cache = (now, trades)
+        return trades
+
+
+@router.get("/insider-trades")
+async def insider_trades(
+    limit: int = Query(200, ge=1, le=500),
+):
+    try:
+        trades = await _get_insider_cache()
+    except Exception:
+        trades = []
+    return {"trades": trades[:limit]}
 
 
 def _parse_pct(val) -> float | None:

@@ -424,6 +424,83 @@ export async function getInsiderTrades(params?: { limit?: number; transaction_ty
   return data.trades
 }
 
+// --- Stock News, Income Statement, Analyst Estimates ---
+
+export interface StockNews {
+  title: string
+  published_date: string | null
+  publisher: string | null
+  site: string | null
+  text: string | null
+  url: string | null
+  image: string | null
+}
+
+export interface IncomeStatement {
+  date: string
+  revenue: number | null
+  gross_profit: number | null
+  operating_income: number | null
+  net_income: number | null
+  eps: number | null
+  ebitda: number | null
+  gross_profit_ratio: number | null
+  operating_income_ratio: number | null
+  net_income_ratio: number | null
+  ebitda_ratio: number | null
+}
+
+export interface AnalystEstimate {
+  date: string
+  revenue_avg: number | null
+  revenue_low: number | null
+  revenue_high: number | null
+  eps_avg: number | null
+  eps_low: number | null
+  eps_high: number | null
+  net_income_avg: number | null
+  ebitda_avg: number | null
+  num_analysts_revenue: number | null
+  num_analysts_eps: number | null
+}
+
+export async function getStockNews(ticker: string): Promise<StockNews[]> {
+  const { data } = await api.get<{ news: StockNews[] }>(`/stocks/${ticker}/news`)
+  return data.news
+}
+
+export async function getIncomeStatement(ticker: string, period = 'annual'): Promise<IncomeStatement[]> {
+  const { data } = await api.get<{ statements: IncomeStatement[] }>(`/stocks/${ticker}/income-statement`, { params: { period } })
+  return data.statements
+}
+
+export async function getAnalystEstimates(ticker: string, period = 'annual'): Promise<AnalystEstimate[]> {
+  const { data } = await api.get<{ estimates: AnalystEstimate[] }>(`/stocks/${ticker}/estimates`, { params: { period } })
+  return data.estimates
+}
+
+export interface PricePoint {
+  date: string
+  price: number
+}
+
+export async function getStockPriceHistory(ticker: string, range = '1Y'): Promise<PricePoint[]> {
+  const { data } = await api.get<PricePoint[]>(`/stocks/${ticker}/price-history`, { params: { range } })
+  return data
+}
+
+export interface StockProfile {
+  description: string | null
+  website: string | null
+  full_time_employees: number | null
+  headquarters: string | null
+}
+
+export async function getStockProfile(ticker: string): Promise<StockProfile> {
+  const { data } = await api.get<StockProfile>(`/stocks/${ticker}/profile`)
+  return data
+}
+
 export async function getProvider(): Promise<LLMProviderInfo> {
   const { data } = await api.get<LLMProviderInfo>('/chat/provider')
   return data

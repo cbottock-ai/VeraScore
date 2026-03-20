@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from src.core.data_providers.fmp import (
-    fmp_analyst_estimates,
+    fmp_analyst_estimates_current as fmp_analyst_estimates,
     fmp_earnings_calendar,
     fmp_earnings_historical,
     fmp_transcript,

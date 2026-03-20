@@ -80,6 +80,14 @@ def _get_stock_info_sync(ticker: str) -> dict:
             # Dividend
             "dividend_yield": info.get("dividendYield"),  # already in percent
             "payout_ratio": _to_pct(info.get("payoutRatio")),
+            # Profile
+            "description": info.get("longBusinessSummary"),
+            "website": info.get("website"),
+            "full_time_employees": info.get("fullTimeEmployees"),
+            "headquarters": (
+                ", ".join(filter(None, [info.get("city"), info.get("state"), info.get("country")]))
+                or None
+            ),
             # Analyst
             "target_mean": info.get("targetMeanPrice"),
             "target_median": info.get("targetMedianPrice"),

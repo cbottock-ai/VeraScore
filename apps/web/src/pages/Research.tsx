@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getStock, getFundamentals, getScores, getEarningsCalendar, getEarningsHistory, listPortfolios, getPortfolio } from '@/services/api'
-import type { EarningsRecord, UpcomingEarning } from '@/services/api'
-import { SP500_TICKERS } from '@/data/sp500'
+import { getStock, getFundamentals, getScores, getEarningsCalendar, getEarningsHistory, listPortfolios, getPortfolio, getStockNews, getIncomeStatement, getAnalystEstimates, getStockPriceHistory, getStockProfile } from '@/services/api'
+import type { EarningsRecord, UpcomingEarning, StockNews, IncomeStatement, AnalystEstimate } from '@/services/api'
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts'
+import { SP500_TICKERS, POPULAR_TICKERS } from '@/data/sp500'
 import { MetricCard } from '@/components/MetricCard'
 import { ScoreGauge, FactorBar, FactorCard } from '@/components/ScoreCard'
 import { Badge } from '@/components/ui/badge'
@@ -151,7 +152,7 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
   })
 
   function filterAndGroup(earnings: UpcomingEarning[]) {
-    const relevant = earnings.filter(e => SP500_TICKERS.has(e.symbol) || watchlistSet.has(e.symbol))
+    const relevant = earnings.filter(e => SP500_TICKERS.has(e.symbol) || POPULAR_TICKERS.has(e.symbol) || watchlistSet.has(e.symbol))
     const filtered = watchlistOnly ? relevant.filter(e => watchlistSet.has(e.symbol)) : relevant
     const byDate: Record<string, UpcomingEarning[]> = {}
     for (const e of filtered) {
@@ -205,7 +206,7 @@ function UpcomingEarningsCalendar({ watchlistTickers }: { watchlistTickers: stri
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-base font-semibold">This Week</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">S&P 500 · {weekFrom} – {weekTo}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">S&P 500 + popular · {weekFrom} – {weekTo}</p>
           </div>
           <div className="flex items-center gap-3">
             {!weekQuery.isLoading && <span className="text-xs text-muted-foreground">{weekReportCount} reports</span>}
@@ -545,7 +546,7 @@ export function EarningsResearchPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold">Earnings Calendar</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">S&P 500 · upcoming reports</p>
+        <p className="text-sm text-muted-foreground mt-0.5">S&P 500 + popular stocks · upcoming reports</p>
       </div>
       <UpcomingEarningsCalendar watchlistTickers={watchlistTickers} />
     </div>
@@ -554,8 +555,1104 @@ export function EarningsResearchPage() {
 
 // ─── Stock page ───────────────────────────────────────────────────────────────
 
+type StockTab = 'overview' | 'financials' | 'news' | 'revenue' | 'profitability' | 'valuations' | 'estimates'
+
+const TABS: { id: StockTab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'financials', label: 'Financials' },
+  { id: 'news', label: 'News' },
+  { id: 'revenue', label: 'Revenue' },
+  { id: 'profitability', label: 'Profitability' },
+  { id: 'valuations', label: 'Valuations' },
+  { id: 'estimates', label: 'Estimates' },
+]
+
+function formatPct(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '—'
+  return `${(v * 100).toFixed(1)}%`
+}
+
+function formatNum(v: number | null | undefined, decimals = 2): string {
+  if (v === null || v === undefined) return '—'
+  return v.toFixed(decimals)
+}
+
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// ─── Overview Tab ─────────────────────────────────────────────────────────────
+
+type PriceRange = '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y'
+
+function PriceChart({ ticker }: { ticker: string }) {
+  const [range, setRange] = useState<PriceRange>('1Y')
+  const { data: prices, isLoading } = useQuery({
+    queryKey: ['priceHistory', ticker, range],
+    queryFn: () => getStockPriceHistory(ticker, range),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const isUp = prices && prices.length >= 2 ? prices[prices.length - 1].price >= prices[0].price : true
+  const color = isUp ? '#22c55e' : '#ef4444'
+
+  const minPrice = prices ? Math.min(...prices.map(p => p.price)) : 0
+  const maxPrice = prices ? Math.max(...prices.map(p => p.price)) : 0
+  const padding = (maxPrice - minPrice) * 0.08 || 1
+
+  const formatXTick = (dateStr: string) => {
+    const d = new Date(dateStr)
+    if (range === '1W' || range === '1M') return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    if (range === '5Y') return d.getFullYear().toString()
+    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+  }
+
+  const tickCount = range === '1W' ? 5 : range === '1M' ? 4 : range === '3M' ? 3 : range === '6M' ? 3 : range === '1Y' ? 4 : 5
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest">Price</h2>
+        <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
+          {(['1W', '1M', '3M', '6M', '1Y', '5Y'] as PriceRange[]).map(r => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className={`px-2 py-1 transition-colors ${range === r ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      </div>
+      {isLoading ? (
+        <Skeleton className="w-full h-[200px] mt-1" />
+      ) : !prices || prices.length === 0 ? (
+        <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No price data</div>
+      ) : (
+        <div className="mt-1">
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={prices} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id={`priceGrad-${ticker}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={color} stopOpacity={0.2} />
+                  <stop offset="95%" stopColor={color} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatXTick}
+                tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                tickCount={tickCount}
+                axisLine={false}
+                tickLine={false}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                domain={[minPrice - padding, maxPrice + padding]}
+                tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                tickFormatter={(v) => `$${v.toFixed(0)}`}
+                axisLine={false}
+                tickLine={false}
+                width={48}
+              />
+              <Tooltip
+                contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
+                labelFormatter={(l) => new Date(l).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                formatter={(v: number) => [`$${v.toFixed(2)}`, 'Price']}
+              />
+              <Area type="monotone" dataKey="price" stroke={color} strokeWidth={1.5} fill={`url(#priceGrad-${ticker})`} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OverviewTab({
+  stock,
+  scores,
+  fundamentals,
+  scoresLoading,
+  fundamentalsLoading,
+}: {
+  stock: import('@/types/stock').StockDetail
+  scores: import('@/types/stock').StockScoresResponse | undefined
+  fundamentals: import('@/types/stock').FundamentalsResponse | undefined
+  scoresLoading: boolean
+  fundamentalsLoading: boolean
+}) {
+  return (
+    <div className="space-y-6">
+      {/* VeraScore + Price Chart side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {scoresLoading ? (
+          <div className="rounded-xl border border-border bg-card p-5">
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : scores ? (
+          <div className="rounded-xl border border-border bg-card p-5">
+            <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-4">VeraScore</h2>
+            <div className="flex items-center gap-6 flex-wrap">
+              <ScoreGauge score={scores.overall_score} label="Overall Score" size="lg" />
+              <div className="flex-1 min-w-[180px] divide-y divide-border/50">
+                {Object.values(scores.factors).map((f) => (
+                  <FactorBar key={f.factor} factor={f} />
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-card p-5 flex items-center justify-center text-sm text-muted-foreground">
+            No score data available
+          </div>
+        )}
+        <PriceChart ticker={stock.ticker} />
+      </div>
+
+      {/* Category Highlights */}
+      {fundamentals && !fundamentalsLoading && (
+        <div>
+          <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">At a Glance</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Valuation */}
+            <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valuation</div>
+              {[
+                { label: 'Forward P/E', value: fundamentals.valuation.pe_ntm != null ? `${formatNum(fundamentals.valuation.pe_ntm)}x` : '—' },
+                { label: 'Forward EPS', value: fundamentals.valuation.eps_ntm != null ? `$${formatNum(fundamentals.valuation.eps_ntm)}` : '—' },
+                { label: 'EV / EBITDA', value: fundamentals.valuation.ev_to_ebitda != null ? `${formatNum(fundamentals.valuation.ev_to_ebitda)}x` : '—' },
+                { label: 'PEG Ratio', value: fundamentals.valuation.peg_ratio != null ? `${formatNum(fundamentals.valuation.peg_ratio)}x` : '—' },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="font-mono font-medium tabular-nums">{value}</span>
+                </div>
+              ))}
+            </div>
+            {/* Growth */}
+            <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Growth</div>
+              {[
+                { label: 'Revenue YoY', pct: fundamentals.growth.revenue_growth_yoy },
+                { label: 'Earnings YoY', pct: fundamentals.growth.earnings_growth_yoy },
+                { label: 'Revenue 3Y CAGR', pct: fundamentals.growth.revenue_growth_3y },
+                { label: 'Earnings 3Y CAGR', pct: fundamentals.growth.earnings_growth_3y },
+              ].map(({ label, pct }) => (
+                <div key={label} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className={`font-mono font-medium tabular-nums ${pct != null ? (pct >= 0 ? 'text-green-500' : 'text-red-500') : ''}`}>
+                    {pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%` : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {/* Profitability */}
+            <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Profitability</div>
+              {[
+                { label: 'Gross Margin', v: fundamentals.profitability.gross_margin },
+                { label: 'Operating Margin', v: fundamentals.profitability.operating_margin },
+                { label: 'Net Margin', v: fundamentals.profitability.net_margin },
+                { label: 'ROE', v: fundamentals.profitability.roe },
+              ].map(({ label, v }) => (
+                <div key={label} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="font-mono font-medium tabular-nums">{v != null ? `${v.toFixed(1)}%` : '—'}</span>
+                </div>
+              ))}
+            </div>
+            {/* Momentum */}
+            <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Momentum</div>
+              {[
+                { label: '1-Month', pct: fundamentals.momentum.price_change_1m },
+                { label: '3-Month', pct: fundamentals.momentum.price_change_3m },
+                { label: '6-Month', pct: fundamentals.momentum.price_change_6m },
+                { label: '1-Year', pct: fundamentals.momentum.price_change_1y },
+              ].map(({ label, pct }) => (
+                <div key={label} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className={`font-mono font-medium tabular-nums ${pct != null ? (pct >= 0 ? 'text-green-500' : 'text-red-500') : ''}`}>
+                    {pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {/* Financial Health */}
+            <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Financial Health</div>
+              {[
+                { label: 'Current Ratio', value: fundamentals.quality.current_ratio != null ? formatNum(fundamentals.quality.current_ratio) : '—' },
+                { label: 'Debt / Equity', value: fundamentals.quality.debt_to_equity != null ? `${formatNum(fundamentals.quality.debt_to_equity)}x` : '—' },
+                { label: 'FCF Yield', value: fundamentals.quality.fcf_yield != null ? `${fundamentals.quality.fcf_yield.toFixed(1)}%` : '—' },
+                { label: 'Free Cash Flow', value: fundamentals.quality.free_cash_flow != null ? formatCompact(fundamentals.quality.free_cash_flow) : '—' },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="font-mono font-medium tabular-nums">{value}</span>
+                </div>
+              ))}
+            </div>
+            {/* Analyst */}
+            <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Analyst Consensus</div>
+              {[
+                { label: 'Rating', value: fundamentals.analyst.rating ?? '—' },
+                { label: 'Price Target (NTM)', value: fundamentals.analyst.target_mean != null ? `$${formatNum(fundamentals.analyst.target_mean)}` : '—' },
+                { label: 'Target High', value: fundamentals.analyst.target_high != null ? `$${formatNum(fundamentals.analyst.target_high)}` : '—' },
+                { label: '# Analysts', value: fundamentals.analyst.num_analysts != null ? String(fundamentals.analyst.num_analysts) : '—' },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="font-mono font-medium tabular-nums">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Company Summary */}
+      <CompanySummary ticker={stock.ticker} />
+    </div>
+  )
+}
+
+function CompanySummary({ ticker }: { ticker: string }) {
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ['stockProfile', ticker],
+    queryFn: () => getStockProfile(ticker),
+    staleTime: 60 * 60 * 1000,
+  })
+
+  if (isLoading) return (
+    <div className="rounded-xl border border-border bg-card p-5 space-y-2">
+      <Skeleton className="h-4 w-32" />
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-3/4" />
+    </div>
+  )
+
+  if (!profile?.description) return null
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">About</h2>
+      <p className="text-sm text-foreground leading-relaxed">{profile.description}</p>
+      {(profile.headquarters || profile.full_time_employees || profile.website) && (
+        <div className="flex flex-wrap gap-4 mt-4 text-xs text-muted-foreground">
+          {profile.headquarters && <span>📍 {profile.headquarters}</span>}
+          {profile.full_time_employees && <span>👥 {profile.full_time_employees.toLocaleString()} employees</span>}
+          {profile.website && (
+            <a href={profile.website} target="_blank" rel="noopener noreferrer" className="hover:text-foreground underline underline-offset-2">
+              {profile.website.replace(/^https?:\/\//, '')}
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Financials Tab ────────────────────────────────────────────────────────────
+
+function FinancialsTab({ ticker }: { ticker: string }) {
+  const [period, setPeriod] = useState<'annual' | 'quarter'>('annual')
+
+  const { data: statements, isLoading } = useQuery({
+    queryKey: ['incomeStatement', ticker, period],
+    queryFn: () => getIncomeStatement(ticker, period),
+    staleTime: 10 * 60 * 1000,
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground uppercase tracking-widest">Income Statement</h2>
+        <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
+          {(['annual', 'quarter'] as const).map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-3 py-1.5 transition-colors ${period === p ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+            >
+              {p === 'annual' ? 'Annual' : 'Quarterly'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+        </div>
+      ) : !statements || statements.length === 0 ? (
+        <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">No income statement data available.</div>
+      ) : (
+        <div className="rounded-xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  {['Date', 'Revenue', 'Gross Profit', 'Operating Income', 'Net Income', 'EPS'].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-right first:text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {statements.map((s: IncomeStatement, i: number) => (
+                  <tr key={i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-2.5 text-sm font-medium whitespace-nowrap">{s.date ? s.date.slice(0, 4) + (period === 'quarter' ? ' ' + s.date : '') : '—'}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      <div className="font-mono text-sm">{s.revenue !== null ? formatCompact(s.revenue) : '—'}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      <div className="font-mono text-sm">{s.gross_profit !== null ? formatCompact(s.gross_profit) : '—'}</div>
+                      {s.gross_profit_ratio !== null && <div className="text-[10px] text-green-500 font-medium">{(s.gross_profit_ratio * 100).toFixed(1)}%</div>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      <div className="font-mono text-sm">{s.operating_income !== null ? formatCompact(s.operating_income) : '—'}</div>
+                      {s.operating_income_ratio !== null && <div className={`text-[10px] font-medium ${s.operating_income_ratio >= 0 ? 'text-blue-500' : 'text-red-500'}`}>{(s.operating_income_ratio * 100).toFixed(1)}%</div>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      <div className="font-mono text-sm">{s.net_income !== null ? formatCompact(s.net_income) : '—'}</div>
+                      {s.net_income_ratio !== null && <div className={`text-[10px] font-medium ${s.net_income_ratio >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{(s.net_income_ratio * 100).toFixed(1)}%</div>}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums">
+                      {s.eps !== null ? `$${s.eps.toFixed(2)}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── News Tab ─────────────────────────────────────────────────────────────────
+
+function NewsTab({ ticker }: { ticker: string }) {
+  const { data: news, isLoading } = useQuery({
+    queryKey: ['stockNews', ticker],
+    queryFn: () => getStockNews(ticker),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="rounded-xl border border-border bg-card p-4 flex gap-4">
+            <Skeleton className="w-20 h-20 rounded-lg shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-5/6" />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (!news || news.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        No news articles available for {ticker}.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {news.slice(0, 20).map((article: StockNews, i: number) => {
+        const hue = (article.site ?? ticker).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+        return (
+          <div key={i} className="rounded-xl border border-border bg-card p-4 flex gap-4 hover:border-primary/30 transition-colors">
+            {/* Image or colored placeholder */}
+            <div className="shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+              {article.image ? (
+                <img
+                  src={article.image}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; (e.currentTarget.parentElement as HTMLElement).style.backgroundColor = `hsl(${hue} 45% 35%)` }}
+                />
+              ) : (
+                <div className="w-full h-full" style={{ backgroundColor: `hsl(${hue} 45% 35%)` }} />
+              )}
+            </div>
+            {/* Content */}
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                {article.publisher && <span className="font-medium">{article.publisher}</span>}
+                {article.publisher && article.published_date && <span>·</span>}
+                {article.published_date && <span>{formatDate(article.published_date)}</span>}
+              </div>
+              {article.url ? (
+                <a
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-semibold leading-snug hover:text-primary transition-colors line-clamp-2"
+                >
+                  {article.title}
+                </a>
+              ) : (
+                <p className="text-sm font-semibold leading-snug line-clamp-2">{article.title}</p>
+              )}
+              {article.text && (
+                <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{article.text}</p>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Revenue Tab ──────────────────────────────────────────────────────────────
+
+function RevenueTab({
+  ticker,
+  fundamentals,
+  fundamentalsLoading,
+}: {
+  ticker: string
+  fundamentals: import('@/types/stock').FundamentalsResponse | undefined
+  fundamentalsLoading: boolean
+}) {
+  const [period, setPeriod] = useState<'annual' | 'quarter'>('annual')
+
+  const { data: statements, isLoading } = useQuery({
+    queryKey: ['incomeStatement', ticker, period],
+    queryFn: () => getIncomeStatement(ticker, period),
+    staleTime: 10 * 60 * 1000,
+  })
+
+  const growthMetrics = fundamentals ? [
+    { label: 'Revenue YoY', value: fundamentals.growth.revenue_growth_yoy },
+    { label: 'Revenue 3Y CAGR', value: fundamentals.growth.revenue_growth_3y },
+    { label: 'Revenue 5Y CAGR', value: fundamentals.growth.revenue_growth_5y },
+    { label: 'Revenue 10Y CAGR', value: fundamentals.growth.revenue_growth_10y },
+    { label: 'Earnings YoY', value: fundamentals.growth.earnings_growth_yoy },
+    { label: 'Earnings QoQ', value: fundamentals.growth.earnings_growth_quarterly },
+    { label: 'Earnings 3Y CAGR', value: fundamentals.growth.earnings_growth_3y },
+    { label: 'Earnings 5Y CAGR', value: fundamentals.growth.earnings_growth_5y },
+  ] : []
+
+  return (
+    <div className="space-y-6">
+      {/* Growth Rate Cards */}
+      <div>
+        <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Growth Rates</h2>
+        {fundamentalsLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {growthMetrics.map(({ label, value }) => (
+              <div key={label} className="rounded-xl border border-border bg-card px-4 py-3">
+                <div className="text-xs text-muted-foreground mb-1">{label}</div>
+                <div className={`text-xl font-semibold font-mono tabular-nums ${
+                  value === null || value === undefined ? 'text-muted-foreground' :
+                  value >= 0 ? 'text-emerald-500' : 'text-red-500'
+                }`}>
+                  {value !== null && value !== undefined
+                    ? `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`
+                    : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Revenue History Table */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest">Revenue History</h2>
+          <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
+            {(['annual', 'quarter'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 transition-colors ${period === p ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+              >
+                {p === 'annual' ? 'Annual' : 'Quarterly'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        ) : !statements || statements.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">No revenue data available.</div>
+        ) : (
+          <div className="rounded-xl border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    {['Period', 'Revenue', 'YoY Growth', 'Gross Profit', 'Gross Margin', 'EBITDA', 'EBITDA Margin'].map(h => (
+                      <th key={h} className="px-4 py-2.5 text-right first:text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {statements.map((s: IncomeStatement, i: number) => {
+                    const prev = statements[i + 1]
+                    const yoyGrowth = prev?.revenue && s.revenue
+                      ? (s.revenue - prev.revenue) / Math.abs(prev.revenue)
+                      : null
+                    const label = period === 'annual'
+                      ? s.date?.slice(0, 4)
+                      : s.date?.slice(0, 7)
+                    return (
+                      <tr key={i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-2.5 text-sm font-medium whitespace-nowrap">{label ?? '—'}</td>
+                        <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums font-semibold">
+                          {s.revenue !== null ? formatCompact(s.revenue) : '—'}
+                        </td>
+                        <td className={`px-4 py-2.5 font-mono text-sm text-right tabular-nums font-medium ${
+                          yoyGrowth === null ? 'text-muted-foreground' : yoyGrowth >= 0 ? 'text-emerald-500' : 'text-red-500'
+                        }`}>
+                          {yoyGrowth !== null ? `${yoyGrowth >= 0 ? '+' : ''}${(yoyGrowth * 100).toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums text-muted-foreground">
+                          {s.gross_profit !== null ? formatCompact(s.gross_profit) : '—'}
+                        </td>
+                        <td className={`px-4 py-2.5 font-mono text-sm text-right tabular-nums font-medium ${s.gross_profit_ratio !== null ? 'text-green-500' : 'text-muted-foreground'}`}>
+                          {s.gross_profit_ratio !== null ? `${(s.gross_profit_ratio * 100).toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums text-muted-foreground">
+                          {s.ebitda !== null ? formatCompact(s.ebitda) : '—'}
+                        </td>
+                        <td className={`px-4 py-2.5 font-mono text-sm text-right tabular-nums font-medium ${s.ebitda_ratio !== null ? 'text-violet-500' : 'text-muted-foreground'}`}>
+                          {s.ebitda_ratio !== null ? `${(s.ebitda_ratio * 100).toFixed(1)}%` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Profitability Tab ────────────────────────────────────────────────────────
+
+function ProfitabilityTab({
+  ticker,
+  fundamentals,
+  fundamentalsLoading,
+}: {
+  ticker: string
+  fundamentals: import('@/types/stock').FundamentalsResponse | undefined
+  fundamentalsLoading: boolean
+}) {
+  const { data: statements, isLoading: stmtLoading } = useQuery({
+    queryKey: ['incomeStatement', ticker, 'annual'],
+    queryFn: () => getIncomeStatement(ticker, 'annual'),
+    staleTime: 10 * 60 * 1000,
+  })
+
+  const profitMetrics = fundamentals ? [
+    { label: 'Gross Margin', value: fundamentals.profitability.gross_margin, color: 'text-green-500' },
+    { label: 'Operating Margin', value: fundamentals.profitability.operating_margin, color: 'text-blue-500' },
+    { label: 'Net Margin', value: fundamentals.profitability.net_margin, color: 'text-emerald-500' },
+    { label: 'EBITDA Margin', value: fundamentals.profitability.ebitda_margin, color: 'text-violet-500' },
+    { label: 'ROE', value: fundamentals.profitability.roe, color: 'text-amber-500' },
+    { label: 'ROA', value: fundamentals.profitability.roa, color: 'text-cyan-500' },
+    { label: 'FCF Yield', value: fundamentals.quality.fcf_yield, color: 'text-orange-500' },
+  ] : []
+
+  return (
+    <div className="space-y-6">
+      {/* Current Margins */}
+      <div>
+        <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Current Margins &amp; Returns</h2>
+        {fundamentalsLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {profitMetrics.map(({ label, value, color }) => (
+              <div key={label} className="rounded-xl border border-border bg-card px-4 py-3">
+                <div className="text-xs text-muted-foreground mb-1">{label}</div>
+                <div className={`text-xl font-semibold font-mono tabular-nums ${value !== null && value !== undefined ? color : 'text-muted-foreground'}`}>
+                  {value !== null && value !== undefined ? formatPct(value) : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Historical Margin Trend */}
+      <div>
+        <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Margin History (Annual)</h2>
+        {stmtLoading ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+        ) : !statements || statements.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">No historical data available.</div>
+        ) : (
+          <div className="rounded-xl border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    {['Year', 'Revenue', 'Gross Margin', 'Operating Margin', 'Net Margin', 'EBITDA Margin'].map(h => (
+                      <th key={h} className="px-4 py-2.5 text-right first:text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {statements.map((s: IncomeStatement, i: number) => (
+                    <tr key={i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                      <td className="px-4 py-2.5 text-sm font-medium">{s.date ? s.date.slice(0, 4) : '—'}</td>
+                      <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums">{s.revenue !== null ? formatCompact(s.revenue) : '—'}</td>
+                      <td className={`px-4 py-2.5 font-mono text-sm text-right tabular-nums font-medium ${s.gross_profit_ratio !== null ? 'text-green-500' : 'text-muted-foreground'}`}>
+                        {s.gross_profit_ratio !== null ? `${(s.gross_profit_ratio * 100).toFixed(1)}%` : '—'}
+                      </td>
+                      <td className={`px-4 py-2.5 font-mono text-sm text-right tabular-nums font-medium ${s.operating_income_ratio !== null ? (s.operating_income_ratio >= 0 ? 'text-blue-500' : 'text-red-500') : 'text-muted-foreground'}`}>
+                        {s.operating_income_ratio !== null ? `${(s.operating_income_ratio * 100).toFixed(1)}%` : '—'}
+                      </td>
+                      <td className={`px-4 py-2.5 font-mono text-sm text-right tabular-nums font-medium ${s.net_income_ratio !== null ? (s.net_income_ratio >= 0 ? 'text-emerald-500' : 'text-red-500') : 'text-muted-foreground'}`}>
+                        {s.net_income_ratio !== null ? `${(s.net_income_ratio * 100).toFixed(1)}%` : '—'}
+                      </td>
+                      <td className={`px-4 py-2.5 font-mono text-sm text-right tabular-nums font-medium ${s.ebitda_ratio !== null ? 'text-violet-500' : 'text-muted-foreground'}`}>
+                        {s.ebitda_ratio !== null ? `${(s.ebitda_ratio * 100).toFixed(1)}%` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Valuations Tab ───────────────────────────────────────────────────────────
+
+function ValuationsTab({
+  fundamentals,
+  fundamentalsLoading,
+  stock,
+}: {
+  fundamentals: import('@/types/stock').FundamentalsResponse | undefined
+  fundamentalsLoading: boolean
+  stock: import('@/types/stock').StockDetail
+}) {
+  const valMetrics = fundamentals ? [
+    { label: 'P/E (TTM)', value: fundamentals.valuation.pe_ttm, suffix: 'x' },
+    { label: 'P/E (NTM)', value: fundamentals.valuation.pe_ntm, suffix: 'x' },
+    { label: 'P/B', value: fundamentals.valuation.pb_ratio, suffix: 'x' },
+    { label: 'P/S (TTM)', value: fundamentals.valuation.ps_ttm, suffix: 'x' },
+    { label: 'EV/EBITDA', value: fundamentals.valuation.ev_to_ebitda, suffix: 'x' },
+    { label: 'EV/Revenue', value: fundamentals.valuation.ev_to_revenue, suffix: 'x' },
+    { label: 'PEG Ratio', value: fundamentals.valuation.peg_ratio, suffix: 'x' },
+    { label: 'EPS (TTM)', value: fundamentals.valuation.eps_ttm, prefix: '$', suffix: '' },
+    { label: 'EPS (NTM)', value: fundamentals.valuation.eps_ntm, prefix: '$', suffix: '' },
+  ] : []
+
+  const analyst = fundamentals?.analyst
+
+  return (
+    <div className="space-y-6">
+      {/* Valuation Multiples Grid */}
+      <div>
+        <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Valuation Multiples</h2>
+        {fundamentalsLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {valMetrics.map(({ label, value, suffix = '', prefix = '' }) => (
+              <div key={label} className="rounded-xl border border-border bg-card px-4 py-3">
+                <div className="text-xs text-muted-foreground mb-1">{label}</div>
+                <div className="text-xl font-semibold font-mono tabular-nums">
+                  {value !== null && value !== undefined ? `${prefix}${value.toFixed(2)}${suffix}` : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Analyst Price Target */}
+      <div>
+        <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Analyst Price Targets</h2>
+        {fundamentalsLoading ? (
+          <Skeleton className="h-32 w-full rounded-xl" />
+        ) : analyst ? (
+          <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div>
+                <div className="text-xs text-muted-foreground mb-0.5">Consensus Rating</div>
+                <div className="text-lg font-semibold">{analyst.rating ?? '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground mb-0.5">Analysts</div>
+                <div className="text-lg font-semibold font-mono">{analyst.num_analysts ?? '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground mb-0.5">Price Target (Mean)</div>
+                <div className="text-2xl font-bold font-mono tabular-nums">
+                  {analyst.target_mean !== null ? `$${analyst.target_mean.toFixed(2)}` : '—'}
+                </div>
+              </div>
+              {stock.price !== null && analyst.target_mean !== null && (
+                <div>
+                  <div className="text-xs text-muted-foreground mb-0.5">Upside / Downside</div>
+                  <div className={`text-lg font-bold font-mono ${analyst.target_mean >= stock.price ? 'text-green-500' : 'text-red-500'}`}>
+                    {analyst.target_mean >= stock.price ? '▲' : '▼'} {Math.abs(((analyst.target_mean - stock.price) / stock.price) * 100).toFixed(1)}%
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
+              {[
+                { label: 'PT Low', value: analyst.target_low },
+                { label: 'PT Median', value: analyst.target_median },
+                { label: 'PT High', value: analyst.target_high },
+              ].map(({ label, value }) => (
+                <div key={label} className="text-center">
+                  <div className="text-xs text-muted-foreground mb-0.5">{label}</div>
+                  <div className="text-base font-semibold font-mono tabular-nums">
+                    {value !== null ? `$${value.toFixed(2)}` : '—'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">No analyst data available.</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Estimates Tab ────────────────────────────────────────────────────────────
+
+function EstimatesTab({ ticker }: { ticker: string }) {
+  const [period, setPeriod] = useState<'annual' | 'quarter'>('annual')
+
+  const { data: estimates, isLoading } = useQuery({
+    queryKey: ['analystEstimates', ticker, period],
+    queryFn: () => getAnalystEstimates(ticker, period),
+    staleTime: 10 * 60 * 1000,
+  })
+
+  return (
+    <div className="space-y-6">
+      {/* Analyst Estimates Table */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest">Forward Estimates</h2>
+          <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
+            {(['annual', 'quarter'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 transition-colors ${period === p ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+              >
+                {p === 'annual' ? 'Annual' : 'Quarterly'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+        ) : !estimates || estimates.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">No analyst estimate data available.</div>
+        ) : (
+          <div className="rounded-xl border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    {['Date', 'Revenue Est', 'EPS (Low)', 'EPS (Avg)', 'EPS (High)', '# Analysts'].map(h => (
+                      <th key={h} className="px-4 py-2.5 text-right first:text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {estimates.map((e: AnalystEstimate, i: number) => (
+                    <tr key={i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                      <td className="px-4 py-2.5 text-sm font-medium whitespace-nowrap">{e.date ? e.date.slice(0, 7) : '—'}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="font-mono text-sm">{e.revenue_avg !== null ? formatCompact(e.revenue_avg) : '—'}</div>
+                        {e.revenue_low !== null && e.revenue_high !== null && (
+                          <div className="text-[10px] text-muted-foreground">{formatCompact(e.revenue_low)} – {formatCompact(e.revenue_high)}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums text-red-400">
+                        {e.eps_low !== null ? `$${e.eps_low.toFixed(2)}` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums font-semibold">
+                        {e.eps_avg !== null ? `$${e.eps_avg.toFixed(2)}` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums text-green-500">
+                        {e.eps_high !== null ? `$${e.eps_high.toFixed(2)}` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-sm text-right tabular-nums text-muted-foreground">
+                        {e.num_analysts_eps ?? e.num_analysts_revenue ?? '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Earnings History */}
+      <div>
+        <h2 className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Earnings History</h2>
+        <EarningsHistorySection ticker={ticker} />
+      </div>
+    </div>
+  )
+}
+
+// ─── Main StockResearchPage ────────────────────────────────────────────────────
+
+// ─── Stock Chat Panel ──────────────────────────────────────────────────────────
+
+interface ChatMsg { role: 'user' | 'assistant'; content: string }
+
+function StockChatPanel({
+  ticker,
+  activeTab,
+  context,
+  open,
+  onClose,
+}: {
+  ticker: string
+  activeTab: string
+  context: Record<string, unknown>
+  open: boolean
+  onClose: () => void
+}) {
+  const [messages, setMessages] = useState<ChatMsg[]>([])
+  const [input, setInput] = useState('')
+  const [streaming, setStreaming] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-scroll to bottom on new content
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, streaming])
+
+  // Focus input when panel opens
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 150)
+  }, [open])
+
+  const send = useCallback(async () => {
+    const text = input.trim()
+    if (!text || streaming) return
+
+    const userMsg: ChatMsg = { role: 'user', content: text }
+    setMessages(prev => [...prev, userMsg])
+    setInput('')
+    setStreaming(true)
+
+    const allMessages = [...messages, userMsg]
+    let accumulated = ''
+
+    try {
+      const response = await fetch(`/api/stocks/${ticker}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: allMessages,
+          active_tab: activeTab,
+          context,
+        }),
+      })
+
+      if (!response.ok) throw new Error(`${response.status}`)
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No stream')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      // Add placeholder assistant message
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6)
+          if (data === '[DONE]') break
+          try {
+            accumulated += JSON.parse(data)
+            setMessages(prev => {
+              const next = [...prev]
+              next[next.length - 1] = { role: 'assistant', content: accumulated }
+              return next
+            })
+          } catch {}
+        }
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }])
+    } finally {
+      setStreaming(false)
+    }
+  }, [input, streaming, messages, ticker, activeTab, context])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+  }
+
+  const tabLabel = activeTab.charAt(0).toUpperCase() + activeTab.slice(1)
+
+  return (
+    <>
+      {/* Backdrop (mobile) */}
+      {open && <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={onClose} />}
+
+      {/* Panel */}
+      <div className={`fixed top-0 right-0 h-full w-[380px] z-40 flex flex-col bg-card border-l border-border shadow-2xl transition-transform duration-300 ${open ? 'translate-x-0' : 'translate-x-full'}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+          <div>
+            <div className="text-sm font-semibold">{ticker} — AI Analyst</div>
+            <div className="text-xs text-muted-foreground">{tabLabel} context loaded</div>
+          </div>
+          <div className="flex items-center gap-2">
+            {messages.length > 0 && (
+              <button onClick={() => setMessages([])} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted transition-colors">
+                Clear
+              </button>
+            )}
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1.5 rounded hover:bg-muted transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {messages.length === 0 && !streaming && (
+            <div className="text-center text-sm text-muted-foreground py-8 space-y-3">
+              <div className="text-2xl">📊</div>
+              <p className="font-medium text-foreground">Ask anything about {ticker}</p>
+              <p>I have full access to the data on this page. Try asking:</p>
+              <div className="space-y-2 text-left">
+                {[
+                  `What are ${ticker}'s biggest strengths?`,
+                  `How do the margins compare to typical ${context.sector ?? 'industry'} companies?`,
+                  `What does the valuation suggest about growth expectations?`,
+                ].map(q => (
+                  <button
+                    key={q}
+                    onClick={() => { setInput(q); setTimeout(() => inputRef.current?.focus(), 50) }}
+                    className="w-full text-left text-xs px-3 py-2 rounded-lg border border-border hover:bg-muted transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                msg.role === 'user'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-foreground'
+              }`}>
+                {msg.content || (streaming && i === messages.length - 1 ? (
+                  <span className="inline-flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:0ms]" />
+                    <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:150ms]" />
+                    <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:300ms]" />
+                  </span>
+                ) : '')}
+              </div>
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div className="px-4 py-3 border-t border-border shrink-0">
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about this stock…"
+              rows={1}
+              disabled={streaming}
+              className="flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 max-h-32 overflow-y-auto"
+              style={{ minHeight: '40px' }}
+            />
+            <button
+              onClick={send}
+              disabled={!input.trim() || streaming}
+              className="shrink-0 rounded-xl bg-primary text-primary-foreground px-3 py-2 text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1.5 text-center">Enter to send · Shift+Enter for new line</p>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export function StockResearchPage() {
   const { ticker } = useParams()
+  const [activeTab, setActiveTab] = useState<StockTab>('overview')
+  const [chatOpen, setChatOpen] = useState(false)
 
   const stockQuery = useQuery({
     queryKey: ['stock', ticker],
@@ -579,162 +1676,200 @@ export function StockResearchPage() {
   const scores = scoresQuery.data
   const fundamentals = fundamentalsQuery.data
 
+  // Context passed to the AI chat — includes all loaded data
+  const chatContext = useMemo(() => ({
+    name: stock?.name,
+    sector: stock?.sector,
+    industry: stock?.industry,
+    price: stock?.price,
+    market_cap: stock?.market_cap,
+    week_52_high: stock?.week_52_high,
+    week_52_low: stock?.week_52_low,
+    beta: stock?.beta,
+    data: {
+      scores: scores ? {
+        overall: scores.overall_score,
+        factors: Object.fromEntries(
+          Object.values(scores.factors).map(f => [f.factor, { score: f.score, label: f.label }])
+        ),
+      } : undefined,
+      valuation: fundamentals?.valuation,
+      growth: fundamentals?.growth,
+      profitability: fundamentals?.profitability,
+      quality: fundamentals?.quality,
+      momentum: fundamentals?.momentum,
+      analyst: fundamentals?.analyst,
+    },
+  }), [stock, scores, fundamentals])
+
   return (
-    <div className="space-y-6">
-      {/* ── Stock Header ──────────────────────────────────────────────────── */}
+    <div className="space-y-0">
+      {/* ── Stock Header Card ─────────────────────────────────────────────── */}
       {stockQuery.isLoading ? (
-        <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <Skeleton className="h-7 w-52" />
+        <div className="rounded-xl border border-border bg-card p-5 mb-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <Skeleton className="w-10 h-10 rounded-lg" />
+            <div className="space-y-2">
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+          </div>
           <Skeleton className="h-4 w-72" />
-          <Skeleton className="h-9 w-36" />
         </div>
       ) : stock ? (
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-xl border border-border bg-card p-5 mb-4">
+          {/* Top row: logo + name + price */}
           <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <div className="flex items-center gap-2.5 mb-1">
-                <h1 className="text-xl font-semibold">{stock.name}</h1>
-                <Badge variant="secondary" className="font-mono text-xs">{stock.ticker}</Badge>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                {stock.sector && <span>{stock.sector}</span>}
-                {stock.sector && stock.industry && <span className="text-border">·</span>}
-                {stock.industry && <span>{stock.industry}</span>}
-                {stock.exchange && <><span className="text-border">·</span><span>{stock.exchange}</span></>}
+            <div className="flex items-center gap-3">
+              <TickerLogo symbol={stock.ticker} size="md" />
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl font-bold">{stock.ticker}</h1>
+                  <span className="text-sm text-muted-foreground font-normal">{stock.name}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap mt-0.5">
+                  {stock.sector && <span>{stock.sector}</span>}
+                  {stock.sector && stock.industry && <span className="text-border">·</span>}
+                  {stock.industry && <span>{stock.industry}</span>}
+                  {stock.exchange && <><span className="text-border">·</span><span>{stock.exchange}</span></>}
+                </div>
               </div>
             </div>
-            {stock.price !== null && (
-              <div className="text-right">
-                <div className="text-3xl font-semibold font-mono tabular-nums">${stock.price.toFixed(2)}</div>
-                {stock.change_percent !== null && (
-                  <span className={`text-sm font-medium ${stock.change_percent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {stock.change_percent >= 0 ? '▲' : '▼'} {Math.abs(stock.change_percent).toFixed(2)}%
-                  </span>
-                )}
-              </div>
+            <div className="flex items-center gap-3">
+              {stock.price !== null && (
+                <div className="text-right">
+                  <div className="text-3xl font-semibold font-mono tabular-nums">${stock.price.toFixed(2)}</div>
+                  {stock.change_percent !== null && (
+                    <span className={`text-sm font-medium ${stock.change_percent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {stock.change_percent >= 0 ? '▲' : '▼'} {Math.abs(stock.change_percent).toFixed(2)}%
+                    </span>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={() => setChatOpen(o => !o)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                  chatOpen
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-card text-foreground border-border hover:bg-muted'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+                Ask AI
+              </button>
+            </div>
+          </div>
+
+          {/* Bottom meta row */}
+          <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+            {stock.market_cap !== null && (
+              <span>Market Cap <span className="text-foreground font-medium">{formatCompact(stock.market_cap)}</span></span>
+            )}
+            {stock.week_52_high !== null && stock.week_52_low !== null && (
+              <span>52W Range <span className="text-foreground font-medium">${stock.week_52_low.toFixed(2)} – ${stock.week_52_high.toFixed(2)}</span></span>
+            )}
+            {stock.beta !== null && (
+              <span>Beta <span className="text-foreground font-medium">{stock.beta.toFixed(2)}</span></span>
+            )}
+            {stock.avg_volume !== null && (
+              <span>Avg Vol <span className="text-foreground font-medium">{formatCompact(stock.avg_volume)}</span></span>
             )}
           </div>
-          {stock.price !== null && (
-            <div className="mt-4 pt-4 border-t border-border flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-              {stock.market_cap !== null && <span>Market Cap <span className="text-foreground font-medium">{formatCompact(stock.market_cap)}</span></span>}
-              {stock.beta !== null && <span>Beta <span className="text-foreground font-medium">{stock.beta.toFixed(2)}</span></span>}
-              {stock.week_52_high !== null && stock.week_52_low !== null && (
-                <span>52W Range <span className="text-foreground font-medium">${stock.week_52_low.toFixed(2)} – ${stock.week_52_high.toFixed(2)}</span></span>
-              )}
-            </div>
-          )}
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-xl border border-border bg-card p-5 mb-4">
           <p className="text-muted-foreground">Stock not found.</p>
         </div>
       )}
 
-      {/* ── VeraScore Hero ────────────────────────────────────────────────── */}
-      {scoresQuery.isLoading ? (
-        <div className="rounded-xl border border-border bg-card p-5"><Skeleton className="h-40 w-full" /></div>
-      ) : scores ? (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">VeraScore</h2>
-          <div className="flex items-center gap-8 flex-wrap">
-            <ScoreGauge score={scores.overall_score} label="Overall Score" size="lg" />
-            <div className="flex-1 min-w-[220px] divide-y divide-border/50">
-              {Object.values(scores.factors).map((f) => (
-                <FactorBar key={f.factor} factor={f} />
-              ))}
-            </div>
+      {/* ── Tab Bar (sticky) ──────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-10 bg-background border-b border-border -mx-4 px-4 sm:-mx-6 sm:px-6 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex gap-0 overflow-x-auto scrollbar-none flex-1">
+            {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors shrink-0 ${
+                activeTab === tab.id
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab.label}
+              {activeTab === tab.id && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+              )}
+            </button>
+          ))}
           </div>
         </div>
-      ) : null}
-
-      {/* ── Score Breakdown ───────────────────────────────────────────────── */}
-      {scores && (
-        <div>
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Score Breakdown</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {Object.values(scores.factors).map((f) => (
-              <FactorCard key={f.factor} factor={f} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Earnings History ──────────────────────────────────────────────── */}
-      {ticker && (
-        <div>
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Earnings History</h2>
-          <EarningsHistorySection ticker={ticker} />
-        </div>
-      )}
-
-      {/* ── Fundamentals ──────────────────────────────────────────────────── */}
-      <div>
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Fundamentals</h2>
-        {fundamentalsQuery.isLoading ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-48" />)}
-          </div>
-        ) : fundamentals ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            <MetricCard title="Valuation" metrics={[
-              { label: 'P/E (TTM)', value: fundamentals.valuation.pe_ttm, format: 'ratio' },
-              { label: 'P/E (NTM)', value: fundamentals.valuation.pe_ntm, format: 'ratio' },
-              { label: 'EPS (TTM)', value: fundamentals.valuation.eps_ttm, format: 'currency' },
-              { label: 'EPS (NTM)', value: fundamentals.valuation.eps_ntm, format: 'currency' },
-              { label: 'P/B', value: fundamentals.valuation.pb_ratio, format: 'ratio' },
-              { label: 'P/S (TTM)', value: fundamentals.valuation.ps_ttm, format: 'ratio' },
-              { label: 'EV/EBITDA', value: fundamentals.valuation.ev_to_ebitda, format: 'ratio' },
-              { label: 'EV/Revenue', value: fundamentals.valuation.ev_to_revenue, format: 'ratio' },
-              { label: 'PEG Ratio', value: fundamentals.valuation.peg_ratio, format: 'ratio' },
-            ]} />
-            <MetricCard title="Growth" metrics={[
-              { label: 'Revenue (YoY)', value: fundamentals.growth.revenue_growth_yoy, format: 'percent' },
-              { label: 'Earnings (YoY)', value: fundamentals.growth.earnings_growth_yoy, format: 'percent' },
-              { label: 'Earnings (QoQ)', value: fundamentals.growth.earnings_growth_quarterly, format: 'percent' },
-              { label: 'Revenue (3Y)', value: fundamentals.growth.revenue_growth_3y, format: 'percent' },
-              { label: 'Earnings (3Y)', value: fundamentals.growth.earnings_growth_3y, format: 'percent' },
-              { label: 'Revenue (5Y)', value: fundamentals.growth.revenue_growth_5y, format: 'percent' },
-              { label: 'Revenue (10Y)', value: fundamentals.growth.revenue_growth_10y, format: 'percent' },
-            ]} />
-            <MetricCard title="Profitability" metrics={[
-              { label: 'Gross Margin', value: fundamentals.profitability.gross_margin, format: 'percent' },
-              { label: 'EBITDA Margin', value: fundamentals.profitability.ebitda_margin, format: 'percent' },
-              { label: 'Operating Margin', value: fundamentals.profitability.operating_margin, format: 'percent' },
-              { label: 'Net Margin', value: fundamentals.profitability.net_margin, format: 'percent' },
-              { label: 'ROE', value: fundamentals.profitability.roe, format: 'percent' },
-              { label: 'ROA', value: fundamentals.profitability.roa, format: 'percent' },
-            ]} />
-            <MetricCard title="Financial Health" metrics={[
-              { label: 'Current Ratio', value: fundamentals.quality.current_ratio, format: 'ratio' },
-              { label: 'Quick Ratio', value: fundamentals.quality.quick_ratio, format: 'ratio' },
-              { label: 'Debt/Equity', value: fundamentals.quality.debt_to_equity, format: 'ratio' },
-              { label: 'Total Debt', value: fundamentals.quality.total_debt, format: 'compact' },
-              { label: 'Total Cash', value: fundamentals.quality.total_cash, format: 'compact' },
-              { label: 'FCF', value: fundamentals.quality.free_cash_flow, format: 'compact' },
-              { label: 'Operating CF', value: fundamentals.quality.operating_cash_flow, format: 'compact' },
-              { label: 'FCF Yield', value: fundamentals.quality.fcf_yield, format: 'percent' },
-            ]} />
-            <MetricCard title="Momentum" metrics={[
-              { label: '1 Month', value: fundamentals.momentum.price_change_1m, format: 'percent' },
-              { label: '3 Months', value: fundamentals.momentum.price_change_3m, format: 'percent' },
-              { label: '6 Months', value: fundamentals.momentum.price_change_6m, format: 'percent' },
-              { label: '1 Year', value: fundamentals.momentum.price_change_1y, format: 'percent' },
-            ]} />
-            <MetricCard title="Dividend" metrics={[
-              { label: 'Dividend Yield', value: fundamentals.dividend.dividend_yield, format: 'percent' },
-              { label: 'Payout Ratio', value: fundamentals.dividend.payout_ratio, format: 'percent' },
-            ]} />
-            <MetricCard title="Analyst Estimates" metrics={[
-              { label: 'Rating', value: fundamentals.analyst.rating, format: 'raw' },
-              { label: '# Analysts', value: fundamentals.analyst.num_analysts, format: 'raw' },
-              { label: 'Target Mean', value: fundamentals.analyst.target_mean, format: 'currency' },
-              { label: 'Target Median', value: fundamentals.analyst.target_median, format: 'currency' },
-              { label: 'Target High', value: fundamentals.analyst.target_high, format: 'currency' },
-              { label: 'Target Low', value: fundamentals.analyst.target_low, format: 'currency' },
-            ]} />
-          </div>
-        ) : null}
       </div>
+
+      {/* ── Tab Content ───────────────────────────────────────────────────── */}
+      {ticker && stock && (
+        <>
+          {activeTab === 'overview' && (
+            <OverviewTab
+              stock={stock}
+              scores={scores}
+              fundamentals={fundamentals}
+              scoresLoading={scoresQuery.isLoading}
+              fundamentalsLoading={fundamentalsQuery.isLoading}
+            />
+          )}
+          {activeTab === 'financials' && (
+            <FinancialsTab ticker={ticker} />
+          )}
+          {activeTab === 'news' && (
+            <NewsTab ticker={ticker} />
+          )}
+          {activeTab === 'revenue' && (
+            <RevenueTab
+              ticker={ticker}
+              fundamentals={fundamentals}
+              fundamentalsLoading={fundamentalsQuery.isLoading}
+            />
+          )}
+          {activeTab === 'profitability' && (
+            <ProfitabilityTab
+              ticker={ticker}
+              fundamentals={fundamentals}
+              fundamentalsLoading={fundamentalsQuery.isLoading}
+            />
+          )}
+          {activeTab === 'valuations' && (
+            <ValuationsTab
+              fundamentals={fundamentals}
+              fundamentalsLoading={fundamentalsQuery.isLoading}
+              stock={stock}
+            />
+          )}
+          {activeTab === 'estimates' && (
+            <EstimatesTab ticker={ticker} />
+          )}
+        </>
+      )}
+
+      {/* Loading state when stock hasn't loaded yet */}
+      {!stock && !stockQuery.isLoading && (
+        <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+          Ticker not found.
+        </div>
+      )}
+
+      {/* AI Chat Panel */}
+      {ticker && (
+        <StockChatPanel
+          ticker={ticker.toUpperCase()}
+          activeTab={activeTab}
+          context={chatContext}
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
     </div>
   )
 }

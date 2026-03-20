@@ -72,18 +72,14 @@ async def fmp_ratios_ttm(ticker: str) -> dict | None:
         return data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else None
 
 
-async def fmp_analyst_estimates(ticker: str) -> dict | None:
+async def fmp_analyst_estimates_current(ticker: str) -> dict | None:
+    """Get the single most recent analyst estimate entry (used by fundamentals fetcher)."""
     if not settings.fmp_api_key:
         return None
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"{FMP_BASE}/analyst-estimates",
-            params={
-                "symbol": ticker,
-                "period": "annual",
-                "limit": 1,
-                "apikey": settings.fmp_api_key,
-            },
+            params={"symbol": ticker, "period": "annual", "limit": 1, "apikey": settings.fmp_api_key},
             timeout=10,
         )
         resp.raise_for_status()
@@ -450,23 +446,20 @@ async def fmp_transcript_list(ticker: str) -> list[dict]:
         return resp.json()
 
 
-async def fmp_analyst_estimates(ticker: str, limit: int = 10) -> list[dict]:
-    """Get analyst estimates for a stock."""
+async def fmp_analyst_estimates(ticker: str, limit: int = 10, period: str = "annual") -> list[dict]:
+    """Get forward analyst estimates for a stock."""
     if not settings.fmp_api_key:
         return []
-
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"{FMP_BASE}/analyst-estimates",
-            params={
-                "symbol": ticker,
-                "limit": limit,
-                "apikey": settings.fmp_api_key,
-            },
+            params={"symbol": ticker, "limit": limit, "period": period, "apikey": settings.fmp_api_key},
             timeout=15,
         )
-        resp.raise_for_status()
-        return resp.json()
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        return data if isinstance(data, list) else []
 
 
 async def fmp_historical_price_light(symbol: str, from_date: str, to_date: str) -> list[dict]:
@@ -559,21 +552,61 @@ async def fmp_grades_consensus(symbol: str) -> dict | None:
         return data[0] if isinstance(data, list) and data else None
 
 
-async def fmp_insider_trading(limit: int = 100, transaction_type: str | None = None) -> list[dict]:
-    """Get recent insider trading transactions."""
+async def fmp_stock_news(symbol: str, limit: int = 20) -> list[dict]:
+    """Get recent news articles for a stock."""
     if not settings.fmp_api_key:
         return []
-    params: dict[str, Any] = {"page": 0, "apikey": settings.fmp_api_key}
-    if transaction_type:
-        params["transactionType"] = transaction_type
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{FMP_BASE}/insider-trading",
-            params=params,
-            timeout=15,
+            f"{FMP_BASE}/news/stock",
+            params={"symbol": symbol, "limit": limit, "apikey": settings.fmp_api_key},
+            timeout=10,
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            return []
         data = resp.json()
-        if isinstance(data, list):
-            return data[:limit]
+        return data if isinstance(data, list) else []
+
+
+async def fmp_income_statement(symbol: str, limit: int = 8, period: str = "annual") -> list[dict]:
+    """Get income statement history."""
+    if not settings.fmp_api_key:
         return []
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{FMP_BASE}/income-statement",
+            params={"symbol": symbol, "limit": limit, "period": period, "apikey": settings.fmp_api_key},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+
+async def fmp_insider_trading(limit: int = 1000) -> list[dict]:
+    """Get recent insider trading transactions, paginating with delays to avoid rate limits."""
+    if not settings.fmp_api_key:
+        return []
+    results = []
+    page = 0
+    per_page = 200
+    max_pages = 15  # cap at 3,000 raw records; ~15 days of filings
+    async with httpx.AsyncClient() as client:
+        while len(results) < limit and page < max_pages:
+            if page > 0:
+                await asyncio.sleep(1.0)  # avoid 429
+            resp = await client.get(
+                f"{FMP_BASE}/insider-trading/latest",
+                params={"page": page, "limit": per_page, "apikey": settings.fmp_api_key},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+            if not isinstance(batch, list) or not batch:
+                break
+            results.extend(batch)
+            if len(batch) < per_page:
+                break  # last page
+            page += 1
+    return results

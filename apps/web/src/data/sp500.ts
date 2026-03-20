@@ -44,3 +44,40 @@ export const SP500_TICKERS = new Set([
   'WMT','DIS','WBD','WM','WAT','WEC','WFC','WELL','WST','WDC','WY','WHR',
   'WMB','WTW','WYNN','XEL','XYL','YUM','ZBRA','ZBH','ZTS',
 ])
+
+// Nasdaq 100 constituents (as of Q1 2026)
+export const NASDAQ100_TICKERS = new Set([
+  'AAPL','MSFT','NVDA','AMZN','META','TSLA','GOOGL','GOOG','AVGO','COST',
+  'NFLX','AMD','TMUS','CSCO','INTC','INTU','CMCSA','PEP','AMGN','ADBE',
+  'TXN','QCOM','HON','SBUX','GILD','BKNG','REGN','ADI','PANW','VRTX',
+  'ISRG','LRCX','KLAC','MDLZ','SNPS','CDNS','ADP','CTAS','PYPL','ORLY',
+  'FTNT','CSX','MAR','CHTR','MU','MELI','PAYX','ROST','KDP','MNST',
+  'NXPI','ODFL','DXCM','PCAR','CPRT','BIIB','FAST','EXC','VRSK','IDXX',
+  'ANSS','CTSH','ON','FANG','DLTR','MRVL','TTD','ROP','CSGP','ILMN',
+  'TEAM','WDAY','CRWD','ZS','DDOG','GEHC','DASH','ABNB','EA','SIRI',
+  'WBD','ZM','DOCU','OKTA','SPLK','MTCH','NDAQ','PLTM','CEG',
+])
+
+// Popular stocks frequently discussed that are NOT in the S&P 500
+// Includes Nasdaq 100 non-S&P members, high-profile growth/tech, and notable new listings
+export const POPULAR_TICKERS = new Set([
+  // Fintech / crypto
+  'COIN','HOOD','SOFI','AFRM','UPST','SQ','BILL','SMAR',
+  // Cloud / SaaS (non-S&P)
+  'SNOW','DDOG','ZS','NET','MDB','DOCU','TWLO','GTLB','ESTC','PATH',
+  'OKTA','HUBS','DOCN','CFLT','SAMSARA','S','IOT','WK','BRZE',
+  // E-commerce / consumer
+  'SHOP','CHWY','W','WISH','RBLX','SNAP','PINS','BMBL','MTTR',
+  // EV / clean energy
+  'RIVN','LCID','NKLA','FSR','XPEV','LI','NIO','GOEV',
+  'JOBY','ACHR','LILM','BLNK','CHPT','BE','STEM',
+  // Nuclear / defense tech
+  'OKLO','SMR','NNE','BWXT','VNET',
+  // AI / robotics
+  'AI','SOUN','BBAI','IONQ','QUBT','RGTI','ARQQ','RXRX','DNLI',
+  // Other high-profile names
+  'LYFT','DASH','ABNB','U','ROKU','SPOT','DUOL','MSTR',
+  'SPCE','OPEN','LMND','AGILON','CLOV','PAYO','BIRD',
+  // Biotech / health (popular names)
+  'BEAM','EDIT','CRSP','NTLA','FATE','KYMR','ARNA',
+])
