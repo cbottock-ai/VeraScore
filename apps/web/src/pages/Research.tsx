@@ -9,6 +9,7 @@ import { MetricCard } from '@/components/MetricCard'
 import { ScoreGauge, FactorBar, FactorCard } from '@/components/ScoreCard'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CopyButton } from '@/components/ui/CopyButton'
 
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1726,6 +1727,11 @@ export function StockResearchPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-xl font-bold">{stock.ticker}</h1>
                   <span className="text-sm text-muted-foreground font-normal">{stock.name}</span>
+                  <CopyButton
+                    text={stock.ticker}
+                    className="opacity-50 hover:opacity-100"
+                    iconSize={13}
+                  />
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap mt-0.5">
                   {stock.sector && <span>{stock.sector}</span>}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { CopyButton } from '@/components/ui/CopyButton'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listConversations,
@@ -357,6 +358,16 @@ function MessageBubble({ message }: { message: Message }) {
         >
           {isUser ? message.content : <ReactMarkdown>{message.content}</ReactMarkdown>}
         </div>
+        {!isUser && (
+          <div className="flex items-center gap-2 px-1">
+            <CopyButton
+              text={message.content}
+              label="Copy"
+              className="opacity-60 hover:opacity-100 py-0.5"
+              iconSize={12}
+            />
+          </div>
+        )}
         {!isUser && message.citations && message.citations.length > 0 && (
           <div className="flex flex-wrap gap-1 px-1">
             {message.citations.map((c, i) => (
